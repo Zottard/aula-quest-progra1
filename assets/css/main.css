@@ -1,0 +1,193 @@
+:root {
+  --bg: #0d0a12;
+  --bg-panel: #17131d;
+  --bg-editor: #0a0810;
+  --amber: #ffb000;
+  --amber-dim: #8a6300;
+  --cyan: #5eead4;
+  --red: #ff5d5d;
+  --magenta: #ff3fa4;
+  --cream: #f5efe0;
+  --cream-dim: #b0a8c2;
+  --border: #3a2f4a;
+  --border-dark: #0a0810;
+  --border-light: #5a4a72;
+  --notch: 8px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(ellipse at 15% 0%, rgba(255, 176, 0, 0.08), transparent 50%),
+    radial-gradient(ellipse at 85% 15%, rgba(94, 234, 212, 0.06), transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(255, 63, 164, 0.05), transparent 55%),
+    var(--bg);
+  color: var(--cream);
+  font-family: "Space Grotesk", sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ---- pixel frame utility: stepped/notched corners, NES-dialog style ---- */
+.pxframe {
+  clip-path: polygon(
+    0 var(--notch),
+    var(--notch) var(--notch),
+    var(--notch) 0,
+    calc(100% - var(--notch)) 0,
+    calc(100% - var(--notch)) var(--notch),
+    100% var(--notch),
+    100% calc(100% - var(--notch)),
+    calc(100% - var(--notch)) calc(100% - var(--notch)),
+    calc(100% - var(--notch)) 100%,
+    var(--notch) 100%,
+    var(--notch) calc(100% - var(--notch)),
+    0 calc(100% - var(--notch))
+  );
+}
+
+.pxborder {
+  border: 3px solid var(--border-light);
+  outline: 3px solid var(--border-dark);
+  outline-offset: -6px;
+}
+
+.scanlines {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(0, 0, 0, 0.14) 0px,
+    rgba(0, 0, 0, 0.14) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  opacity: 0.3;
+  mix-blend-mode: overlay;
+}
+
+.vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 59;
+  box-shadow: inset 0 0 180px rgba(0, 0, 0, 0.65);
+}
+
+@keyframes flashPop {
+  0% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes idleBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes levelSpin {
+  0% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+  30% {
+    transform: translateY(-14px) scale(1.15);
+    filter: brightness(2.3) drop-shadow(0 0 24px var(--amber));
+  }
+  60% {
+    transform: translateY(-6px) scale(1.05);
+    filter: brightness(1.6);
+  }
+  100% {
+    transform: translateY(0) scale(1);
+    filter: brightness(1);
+  }
+}
+
+@keyframes capeSway {
+  0%,
+  100% {
+    transform: skewY(3deg);
+  }
+  50% {
+    transform: skewY(-3deg);
+  }
+}
+
+@keyframes bitFloat {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes badgeGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 rgba(255, 176, 0, 0);
+  }
+  50% {
+    box-shadow: 0 0 8px rgba(255, 176, 0, 0.5);
+  }
+}
+
+@keyframes lineIn {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-6px);
+  }
+  40% {
+    transform: translateX(6px);
+  }
+  60% {
+    transform: translateX(-4px);
+  }
+  80% {
+    transform: translateX(4px);
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "name": "cpp-quest",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview"
+  },
+  "dependencies": {
+    "nuxt": "^3.14.0",
+    "vue": "^3.5.0",
+    "@vueuse/motion": "^2.2.6",
+    "gsap": "^3.12.5",
+    "canvas-confetti": "^1.9.3",
+    "@formkit/auto-animate": "^0.8.2"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.6.4"
+  }
+}
