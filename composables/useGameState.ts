@@ -6,6 +6,7 @@ import type { Topic } from "~/data/modules";
 import { SKILLS } from "~/data/skills";
 import { useSound } from "~/composables/useSound";
 import { useEventBus } from "~/composables/useEventBus";
+import { useCompiler, normalizeOutput } from "~/composables/useCompiler";
 
 const SAVE_KEY = "cppQuestSave_v2";
 
@@ -32,6 +33,34 @@ interface GameState {
   unlockedSkills: string[];
   studentName: string;
   avatarName: string;
+  /** Identidad ligada al panel docente (Supabase). Si el juego corre sin
+   * Supabase configurado (dev local sin .env), quedan en null y el juego
+   * sigue funcionando 100% local como antes — ver useProgressSync.ts. */
+  studentId: string | null;
+  aulaId: string | null;
+  username: string | null;
+}
+
+/** Fila de la tabla `students` tal como la devuelven register_student /
+ * claim_student_by_username (ver supabase/ RPCs). */
+export interface StudentRow {
+  id: string;
+  auth_user_id: string;
+  aula_id: string;
+  real_name: string;
+  username: string;
+  character_name: string;
+  game_state: Partial<{
+    xp: number;
+    exercises: Record<string, ExerciseState>;
+    equipment: Equipment;
+    unlockedSkills: string[];
+  }> | null;
+  xp: number;
+  level: number;
+  created_at: string;
+  updated_at: string;
+  last_seen_at: string;
 }
 
 function freshExState(): ExerciseState {
@@ -47,7 +76,10 @@ function defaultState(): GameState {
     equipment: { weaponId: "daga", armorId: null, petId: "chispita" },
     unlockedSkills: [],
     studentName: "",
-    avatarName: ""
+    avatarName: "",
+    studentId: null,
+    aulaId: null,
+    username: null
   };
 }
 
@@ -86,6 +118,11 @@ function exState(id: string): ExerciseState {
   return state.exercises[id];
 }
 
+// No se persiste: solo indica "hay una compilación en vuelo" para la UI
+// (botón COMPILAR deshabilitado / spinner). Vive fuera de GameState a
+// propósito, es efímero y por eso no va en localStorage.
+const compiling = reactive<Record<string, boolean>>({});
+
 export function useGameState() {
   const level = computed(() => levelFromXp(state.xp));
   const xpIntoLevel = computed(() => state.xp % XP_PER_LEVEL);
@@ -121,6 +158,31 @@ export function useGameState() {
   function setNames(studentName: string, avatarName: string) {
     state.studentName = studentName.trim().slice(0, 40);
     state.avatarName = avatarName.trim().slice(0, 30);
+    persist();
+  }
+
+  /** true si esta identidad ya quedó ligada a una fila `students` en
+   * Supabase (registro o claim exitoso). Ver useProgressSync.ts. */
+  const isLinkedToAula = computed(() => !!state.studentId);
+
+  /** Aplica los datos que devuelve register_student/claim_student_by_username.
+   * `hydrateFromRemote` en true pisa el progreso local con el de la base
+   * (caso "ya tengo usuario" en un dispositivo nuevo); en false deja el
+   * progreso local como está (caso registro nuevo: la base arranca vacía y
+   * lo que suba después es el progreso local ya existente, si lo había). */
+  function setIdentityFromStudent(row: StudentRow, hydrateFromRemote: boolean) {
+    state.studentId = row.id;
+    state.aulaId = row.aula_id;
+    state.username = row.username;
+    state.studentName = row.real_name;
+    state.avatarName = row.character_name;
+    if (hydrateFromRemote && row.game_state) {
+      const gs = row.game_state;
+      if (typeof gs.xp === "number") state.xp = gs.xp;
+      if (gs.exercises && typeof gs.exercises === "object") state.exercises = gs.exercises;
+      if (gs.equipment && typeof gs.equipment === "object") state.equipment = { ...state.equipment, ...gs.equipment };
+      if (Array.isArray(gs.unlockedSkills)) state.unlockedSkills = gs.unlockedSkills;
+    }
     persist();
   }
 
@@ -242,73 +304,111 @@ export function useGameState() {
     if (es.log.length > 8) es.log = es.log.slice(-8);
   }
 
-  /** Corre los tests de la misión activa contra el código enviado. */
-  function checkCode(exerciseId: string, code: string) {
+  /** Compila y corre el código con un compilador real (ver useCompiler.ts).
+   * Todo o nada: la misión se resuelve completa cuando la salida coincide
+   * con exercise.expectedOutput, sin importar CÓMO se haya arreglado el
+   * código — no hay chequeo por bug individual. */
+  async function checkCode(exerciseId: string, code: string) {
     const exercise = EXERCISES.find((e) => e.id === exerciseId);
     if (!exercise) return;
     const es = exState(exerciseId);
     es.savedCode = code;
+    persist();
 
-    let leveledUp = false;
-    let newlySolved = 0;
-    let lastSolvedId: string | null = null;
-
-    const hintDiscount = hasSkill("ojo-certero") ? 0.8 : 0.6;
-    const bugXpMultiplier = hasSkill("estudio-rapido") ? 1.15 : 1;
-    const effectiveness = typeEffectiveness(exercise.topic);
-
-    for (const bug of exercise.bugs) {
-      if (es.solved[bug.id]) continue;
-      if (bug.test(code)) {
-        const before = level.value;
-        let xpGain = es.hinted[bug.id] ? bug.xp * hintDiscount : bug.xp;
-        xpGain = Math.round(xpGain * bugXpMultiplier * effectiveness);
-        state.xp += xpGain;
-        es.solved[bug.id] = true;
-        newlySolved++;
-        lastSolvedId = bug.id;
-        if (levelFromXp(state.xp) > before) leveledUp = true;
-        const tag = effectiveness > 1 ? " ⚡ ¡Muy efectivo!" : "";
-        pushLog(exerciseId, { type: "ok", text: `✔ Bug resuelto: ${bug.label} (+${xpGain} XP)${tag}` });
-        // Un golpe por click: si el código ya arregla varios bugs a la vez,
-        // igual se resuelve de a uno, para que las batallas de varios bugs
-        // (como el jefe) tengan turnos reales donde la ventaja de tipo cuente.
-        break;
-      }
+    if (es.completed) {
+      pushLog(exerciseId, { type: "ok", text: "✔ Esta misión ya está resuelta." });
+      return;
     }
 
-    if (newlySolved === 0) {
+    compiling[exerciseId] = true;
+    const { runCpp } = useCompiler();
+    const result = await runCpp(code);
+    compiling[exerciseId] = false;
+
+    if (result.status === "network_error") {
+      pushLog(exerciseId, {
+        type: "sys",
+        text: "⚠ No se pudo conectar con el compilador. Probá de nuevo en unos segundos."
+      });
+      return;
+    }
+    if (result.status === "timeout") {
       pushLog(exerciseId, {
         type: "err",
-        text: "✖ Todavía queda al menos un bug activo. Revisá la lista de abajo."
+        text: "⏱ Tu programa no terminó a tiempo (¿un bucle que no corta nunca?)."
       });
       sfxWrong();
       bus.emit("wrong", { exerciseId });
-    } else {
-      sfxSolve();
-      bus.emit("solved", { exerciseId, bugId: lastSolvedId, superEffective: effectiveness > 1 });
+      return;
+    }
+    if (result.status === "compile_error") {
+      pushLog(exerciseId, { type: "err", text: `✖ Error de compilación:\n${result.compileError}` });
+      sfxWrong();
+      bus.emit("wrong", { exerciseId });
+      return;
+    }
+    if (result.status === "runtime_error") {
+      pushLog(exerciseId, {
+        type: "err",
+        text: `✖ Compiló, pero falló al correr:\n${result.stderr || "(sin mensaje)"}`
+      });
+      sfxWrong();
+      bus.emit("wrong", { exerciseId });
+      return;
     }
 
-    const allSolved = exercise.bugs.every((b) => es.solved[b.id]);
-    if (allSolved && !es.completed) {
-      es.completed = true;
-      let bonus = exercise.boss ? 100 : 40;
-      if (hasSkill("bonus-mision")) bonus = Math.round(bonus * 1.25);
-      if (exercise.boss && hasSkill("instinto-jefe")) bonus = Math.round(bonus * 1.5);
-      const before = level.value;
-      state.xp += bonus;
-      if (levelFromXp(state.xp) > before) leveledUp = true;
+    const actual = normalizeOutput(result.stdout);
+    const expected = normalizeOutput(exercise.expectedOutput);
+
+    if (actual !== expected) {
       pushLog(exerciseId, {
-        type: exercise.boss ? "boss" : "ok",
-        text: `🏆 Misión completa. Bono de +${bonus} XP.`
+        type: "err",
+        text: `✖ Compiló y corrió, pero el resultado no es el esperado.\nSalida de tu programa:\n${result.stdout || "(sin salida)"}`
       });
-      sfxComplete();
-      bus.emit("complete", { exerciseId });
+      sfxWrong();
+      bus.emit("wrong", { exerciseId });
+      return;
     }
+
+    // ¡Misión resuelta! Se acredita todo el XP de los bugs de una.
+    const before = level.value;
+    const hintDiscount = hasSkill("ojo-certero") ? 0.8 : 0.6;
+    const bugXpMultiplier = hasSkill("estudio-rapido") ? 1.15 : 1;
+    const effectiveness = typeEffectiveness(exercise.topic);
+    const wasHinted = exercise.bugs.some((b) => es.hinted[b.id]);
+
+    let bugXpTotal = 0;
+    for (const bug of exercise.bugs) {
+      const hinted = !!es.hinted[bug.id];
+      const xpGain = Math.round((hinted ? bug.xp * hintDiscount : bug.xp) * bugXpMultiplier * effectiveness);
+      bugXpTotal += xpGain;
+      es.solved[bug.id] = true;
+      const tag = effectiveness > 1 ? " ⚡ ¡Muy efectivo!" : "";
+      pushLog(exerciseId, { type: "ok", text: `✔ Bug resuelto: ${bug.label} (+${xpGain} XP)${tag}` });
+    }
+    state.xp += bugXpTotal;
+
+    es.completed = true;
+    let bonus = exercise.boss ? 100 : 40;
+    if (hasSkill("bonus-mision")) bonus = Math.round(bonus * 1.25);
+    if (exercise.boss && hasSkill("instinto-jefe")) bonus = Math.round(bonus * 1.5);
+    state.xp += bonus;
+    pushLog(exerciseId, { type: exercise.boss ? "boss" : "ok", text: `🏆 Misión completa. Bono de +${bonus} XP.` });
+
+    sfxSolve();
+    sfxComplete();
+    bus.emit("solved", {
+      exerciseId,
+      bugId: null,
+      superEffective: effectiveness > 1,
+      xpGain: bugXpTotal + bonus,
+      hinted: wasHinted
+    });
+    bus.emit("complete", { exerciseId });
 
     persist();
 
-    if (leveledUp) {
+    if (levelFromXp(state.xp) > before) {
       sfxLevelUp();
       bus.emit("levelup", { level: level.value, title: tierInfo.value.title });
     }
@@ -357,6 +457,7 @@ export function useGameState() {
     useHint,
     saveCode,
     checkCode,
+    compiling,
     resetCode,
     toggleMute,
     resetProgress,
@@ -364,6 +465,8 @@ export function useGameState() {
     // identidad
     hasIdentity,
     setNames,
+    isLinkedToAula,
+    setIdentityFromStudent,
     // habilidades
     SKILLS,
     hasSkill,

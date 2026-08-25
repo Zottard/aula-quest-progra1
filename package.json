@@ -9,12 +9,13 @@
     "preview": "nuxt preview"
   },
   "dependencies": {
-    "nuxt": "^3.14.0",
-    "vue": "^3.5.0",
+    "@formkit/auto-animate": "^0.8.2",
+    "@supabase/supabase-js": "^2.112.4",
     "@vueuse/motion": "^2.2.6",
-    "gsap": "^3.12.5",
     "canvas-confetti": "^1.9.3",
-    "@formkit/auto-animate": "^0.8.2"
+    "gsap": "^3.12.5",
+    "nuxt": "^3.14.0",
+    "vue": "^3.5.0"
   },
   "devDependencies": {
     "@types/canvas-confetti": "^1.6.4"

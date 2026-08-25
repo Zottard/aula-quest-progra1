@@ -5,7 +5,6 @@ export interface Bug {
   label: string;
   hint: string;
   explanation: string;
-  test: (code: string) => boolean;
   xp: number;
 }
 
@@ -15,6 +14,12 @@ export interface Exercise {
   concept: string;
   briefing: string;
   code: string;
+  /** Salida exacta (stdout) del programa ya arreglado. La misión se da por
+   * completa cuando lo que el compilador real corre coincide con esto —
+   * ver composables/useCompiler.ts y checkCode() en useGameState.ts. No
+   * hay chequeo por bug individual: cualquier forma válida de arreglar el
+   * programa que produzca esta salida cuenta como resuelta. */
+  expectedOutput: string;
   bugs: Bug[];
   boss?: boolean;
   topic: Topic;
@@ -42,13 +47,13 @@ int main() {
     }
     return 0;
 }`,
+    expectedOutput: "Sos menor de edad",
     bugs: [
       {
         id: "b1",
         label: "El if usa asignación en vez de comparación",
         hint: "Contá los signos '=' dentro del paréntesis del if. ¿Cuántos necesita una comparación de igualdad?",
         explanation: "if (edad = 18) le asigna 18 a edad y siempre es verdadero. Debe ser if (edad == 18).",
-        test: (c) => /if\s*\(\s*edad\s*==\s*18\s*\)/.test(c),
         xp: 50
       }
     ]
@@ -58,12 +63,12 @@ int main() {
     title: "Misión 2 · El resto que no cierra",
     concept: "Operador módulo (%) vs. división (/)",
     topic: "operadores",
-    briefing: `<p>Para saber si un número es par, hace falta mirar el <strong>resto</strong> de dividirlo por 2, no el cociente. Ese es el trabajo del operador <code>%</code> (módulo), distinto de <code>/</code> (división entera).</p><p><strong>Tu misión:</strong> este programa dice que 7 es par. Encontrá el operador equivocado.</p>`,
+    briefing: `<p>Para saber si un número es par, hace falta mirar el <strong>resto</strong> de dividirlo por 2, no el cociente. Ese es el trabajo del operador <code>%</code> (módulo), distinto de <code>/</code> (división entera).</p><p><strong>Tu misión:</strong> este programa dice que 8 es impar. Encontrá el operador equivocado.</p>`,
     code: `#include <iostream>
 using namespace std;
 
 int main() {
-    int numero = 7;
+    int numero = 8;
     if (numero / 2 == 0) {
         cout << numero << " es par" << endl;
     } else {
@@ -71,13 +76,13 @@ int main() {
     }
     return 0;
 }`,
+    expectedOutput: "8 es par",
     bugs: [
       {
         id: "b1",
         label: "Usa división en vez de módulo para chequear paridad",
         hint: "¿Qué operador te da el resto de una división, en vez del cociente?",
-        explanation: "numero / 2 == 0 es división entera y casi siempre da falso. Para paridad se usa numero % 2 == 0.",
-        test: (c) => /if\s*\(\s*numero\s*%\s*2\s*==\s*0\s*\)/.test(c),
+        explanation: "numero / 2 == 0 es división entera: para cualquier numero >= 2 esa condición nunca da verdadera, así que el programa dice 'impar' pase lo que pase. Para paridad se usa numero % 2 == 0.",
         xp: 50
       }
     ]
@@ -99,13 +104,13 @@ int main() {
     }
     return 0;
 }`,
+    expectedOutput: "Iteracion: 0\nIteracion: 1\nIteracion: 2\nIteracion: 3\nIteracion: 4",
     bugs: [
       {
         id: "b1",
         label: "Al for le falta el incremento de 'i'",
         hint: "La tercera parte del for, después del segundo punto y coma, es donde va el incremento.",
         explanation: "for (int i = 0; i < 5; ) deja vacía la parte de incremento. Hace falta for (int i = 0; i < 5; i++).",
-        test: (c) => /for\s*\(\s*int\s+i\s*=\s*0\s*;\s*i\s*<\s*5\s*;\s*i\s*(\+\+|\+=\s*1)\s*\)/.test(c),
         xp: 55
       }
     ]
@@ -125,13 +130,13 @@ int main() {
     }
     return 0;
 }`,
+    expectedOutput: "5\n4\n3\n2\n1",
     bugs: [
       {
         id: "b1",
         label: "La condición de corte nunca se cumple al empezar en 5",
         hint: "i arranca en 5. ¿5 es mayor que 10? La condición decide si el ciclo arranca siquiera.",
         explanation: "i > 10 es falsa desde el principio (5 no es mayor que 10), así que el for nunca entra. Debe ser i > 0 para que la cuenta regresiva funcione.",
-        test: (c) => /for\s*\(\s*int\s+i\s*=\s*5\s*;\s*i\s*>\s*0\s*;\s*i\s*--\s*\)/.test(c),
         xp: 55
       }
     ]
@@ -143,7 +148,7 @@ int main() {
     title: "Misión 5 · El desborde silencioso",
     concept: "Recorrer un vector con for",
     topic: "vectores",
-    briefing: `<p>Un vector de tamaño N tiene índices válidos de <code>0</code> a <code>N-1</code>. El compilador no avisa si te pasás del límite: en C++ eso es "comportamiento indefinido", no un error visible.</p><p><strong>Tu misión:</strong> este programa suma un vector de 5 números pero se pasa de rango. Corregilo.</p>`,
+    briefing: `<p>Un vector de tamaño N tiene índices válidos de <code>0</code> a <code>N-1</code>. El compilador no siempre avisa si te pasás del límite: en C++ eso es "comportamiento indefinido". Acá sí lo vas a ver, porque el compilador de este juego corre tu código con <strong>sanitizers activados</strong> — los mismos que usan los programadores profesionales para cazar este tipo de bug.</p><p><strong>Tu misión:</strong> este programa suma un vector de 5 números pero se pasa de rango. Corregilo.</p>`,
     code: `#include <iostream>
 using namespace std;
 
@@ -156,13 +161,13 @@ int main() {
     cout << "Suma: " << suma << endl;
     return 0;
 }`,
+    expectedOutput: "Suma: 150",
     bugs: [
       {
         id: "b1",
         label: "La condición del for permite un índice inválido",
         hint: "Un vector de 5 elementos tiene índices 0,1,2,3,4. ¿Qué operador de comparación evita llegar a 5?",
-        explanation: "i <= 5 hace que i llegue a valer 5, un índice que no existe en un vector de tamaño 5.",
-        test: (c) => /for\s*\(\s*int\s+i\s*=\s*0\s*;\s*i\s*<\s*5\s*;/.test(c),
+        explanation: "i <= 5 hace que i llegue a valer 5, un índice que no existe en un vector de tamaño 5. El compilador lo va a marcar como 'index 5 out of bounds'.",
         xp: 60
       }
     ]
@@ -192,16 +197,13 @@ int main() {
     cout << "Indice: " << encontrado << endl;
     return 0;
 }`,
+    expectedOutput: "Indice: 2",
     bugs: [
       {
         id: "b1",
         label: "El for corta la búsqueda en el primer elemento que no coincide",
         hint: "El bug corta el for con 'break' apenas la primera posición no es el objetivo. La búsqueda tiene que seguir revisando las demás posiciones.",
         explanation: "El if compara con != y corta con break en la primera posición que no coincide. Hay que comparar con == y guardar el índice solo cuando SÍ coincide, dejando que el for siga.",
-        test: (c) =>
-          /for\s*\(\s*int\s+i\s*=\s*0\s*;\s*i\s*<\s*5\s*;\s*i\s*(\+\+|\+=\s*1)\s*\)\s*\{[\s\S]*?if\s*\(\s*numeros\[i\]\s*==\s*objetivo\s*\)/.test(
-            c
-          ) && !/break\s*;/.test(c),
         xp: 65
       }
     ]
@@ -214,19 +216,19 @@ int main() {
     concept: "Combinación: operadores + ciclos + vectores",
     topic: "vectores",
     boss: true,
-    briefing: `<p>Última misión: una búsqueda binaria en un vector ordenado, con <strong>dos bugs</strong> mezclados de las misiones anteriores. Esto es lo que se siente debuggear código real: los errores no vienen etiquetados ni de a uno.</p><p><strong>Tu misión:</strong> la función debería devolver el índice de "objetivo" dentro del vector ordenado. Encontrá los dos problemas.</p>`,
+    briefing: `<p>Última misión: una búsqueda binaria en un vector ordenado, con <strong>dos bugs</strong> mezclados de las misiones anteriores. Esto es lo que se siente debuggear código real: los errores no vienen etiquetados ni de a uno, y uno de ellos ni siquiera rompe nada a la vista — cuelga el programa.</p><p><strong>Tu misión:</strong> la función debería devolver el índice de "objetivo" dentro del vector ordenado. Encontrá los dos problemas.</p>`,
     code: `#include <iostream>
 using namespace std;
 
 int busquedaBinaria(int arr[], int n, int objetivo) {
     int izquierda = 0;
-    int derecha = n;
-    while (izquierda < derecha) {
+    int derecha = n - 1;
+    while (izquierda <= derecha) {
         int medio = (izquierda + derecha) / 2;
         if (arr[medio] = objetivo) {
             return medio;
         } else if (arr[medio] < objetivo) {
-            izquierda = medio + 1;
+            izquierda = medio;
         } else {
             derecha = medio - 1;
         }
@@ -236,25 +238,24 @@ int busquedaBinaria(int arr[], int n, int objetivo) {
 
 int main() {
     int numeros[6] = {2, 5, 8, 12, 16, 23};
-    int resultado = busquedaBinaria(numeros, 6, 12);
+    int resultado = busquedaBinaria(numeros, 6, 23);
     cout << "Encontrado en indice: " << resultado << endl;
     return 0;
 }`,
+    expectedOutput: "Encontrado en indice: 5",
     bugs: [
       {
         id: "b1",
-        label: "El límite derecho inicial permite un índice fuera de rango",
-        hint: "n es la cantidad de elementos. El último índice válido es n-1, no n.",
-        explanation: "int derecha = n; debería ser int derecha = n - 1; para no apuntar fuera del vector.",
-        test: (c) => /int\s+derecha\s*=\s*n\s*-\s*1\s*;/.test(c),
+        label: "El avance del límite izquierdo no suma 1",
+        hint: "Cuando arr[medio] < objetivo, ¿qué le tenés que sumar a medio antes de guardarlo en izquierda?",
+        explanation: "izquierda = medio; deja el límite izquierdo pegado en el mismo lugar cuando la búsqueda se achica a 2 elementos, y el programa se cuelga en un bucle infinito (por eso, si tu código se cuelga acá, probablemente sea este bug). Hace falta izquierda = medio + 1;.",
         xp: 70
       },
       {
         id: "b2",
         label: "La comparación clave usa asignación en vez de igualdad",
         hint: "Mismo problema que en la misión 1: contá los signos '=' en el if.",
-        explanation: "if (arr[medio] = objetivo) asigna en vez de comparar. Debe ser if (arr[medio] == objetivo).",
-        test: (c) => /if\s*\(\s*arr\[medio\]\s*==\s*objetivo\s*\)/.test(c),
+        explanation: "if (arr[medio] = objetivo) asigna en vez de comparar, así que corta la búsqueda en la primera posición que revisa. Debe ser if (arr[medio] == objetivo).",
         xp: 70
       }
     ]

@@ -12,6 +12,16 @@ export default defineNuxtConfig({
 
   css: ["~/assets/css/main.css"],
 
+  // Credenciales públicas de Supabase (anon/publishable key, protegida por RLS
+  // en la base — no es secreta). Se leen de variables de entorno con prefijo
+  // NUXT_PUBLIC_ para que Nuxt las exponga al cliente. Ver .env.example.
+  runtimeConfig: {
+    public: {
+      supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL ?? "",
+      supabaseAnonKey: process.env.NUXT_PUBLIC_SUPABASE_ANON_KEY ?? ""
+    }
+  },
+
   app: {
     head: {
       title: "C++ Quest — Aula Invertida",

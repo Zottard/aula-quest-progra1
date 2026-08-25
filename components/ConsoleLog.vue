@@ -37,6 +37,8 @@ watch(
   padding: 0.15rem 0;
   border-bottom: 1px dashed #241d33;
   opacity: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
   animation: lineIn 0.3s ease forwards;
 }
 .line:last-child {

@@ -3,7 +3,7 @@ import { useAutoAnimate } from "@formkit/auto-animate/vue";
 import type { Exercise } from "~/data/exercises";
 import type { ExerciseState } from "~/composables/useGameState";
 
-const props = defineProps<{ exercise: Exercise; exState: ExerciseState; justSolvedId: string | null }>();
+const props = defineProps<{ exercise: Exercise; exState: ExerciseState; justCompleted: boolean }>();
 const emit = defineEmits<{ hint: [bugId: string] }>();
 
 const [listRef] = useAutoAnimate({ duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" });
@@ -16,7 +16,7 @@ const [listRef] = useAutoAnimate({ duration: 260, easing: "cubic-bezier(.2,.8,.2
       :key="bug.id"
       class="bug-item"
       :data-bug="bug.id"
-      :class="{ solved: props.exState.solved[bug.id], zap: bug.id === props.justSolvedId }"
+      :class="{ solved: props.exState.solved[bug.id], zap: props.justCompleted && props.exState.solved[bug.id] }"
     >
       <div>
         <div>

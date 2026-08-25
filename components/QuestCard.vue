@@ -2,13 +2,14 @@
 import { EXERCISES } from "~/data/exercises";
 import { useGameState } from "~/composables/useGameState";
 
-const { state, exState, saveCode, checkCode, resetCode, useHint } = useGameState();
+const { state, exState, saveCode, checkCode, compiling, resetCode, useHint } = useGameState();
 
 const exercise = computed(() => EXERCISES.find((e) => e.id === state.activeId)!);
 const es = computed(() => exState(exercise.value.id));
+const isCompiling = computed(() => !!compiling[exercise.value.id]);
 
 const code = ref(es.value.savedCode ?? exercise.value.code);
-const justSolvedId = ref<string | null>(null);
+const justCompleted = ref(false);
 const cardRef = ref<HTMLElement | null>(null);
 const shake = ref(false);
 
@@ -17,7 +18,7 @@ watch(
   () => exercise.value.id,
   () => {
     code.value = es.value.savedCode ?? exercise.value.code;
-    justSolvedId.value = null;
+    justCompleted.value = false;
   }
 );
 
@@ -25,15 +26,15 @@ watch(code, (val) => saveCode(exercise.value.id, val));
 
 const gutterLines = computed(() => exercise.value.code.split("\n").map((_, i) => i + 1).join("\n"));
 
-function handleCheck() {
-  const beforeSolved = { ...es.value.solved };
-  checkCode(exercise.value.id, code.value);
+async function handleCheck() {
+  if (isCompiling.value) return;
+  const wasCompleted = es.value.completed;
+  await checkCode(exercise.value.id, code.value);
 
-  const newlySolved = exercise.value.bugs.find((b) => es.value.solved[b.id] && !beforeSolved[b.id]);
-  if (newlySolved) {
-    justSolvedId.value = newlySolved.id;
+  if (!wasCompleted && es.value.completed) {
+    justCompleted.value = true;
   } else {
-    justSolvedId.value = null;
+    justCompleted.value = false;
     shake.value = false;
     requestAnimationFrame(() => (shake.value = true));
     setTimeout(() => (shake.value = false), 400);
@@ -92,16 +93,17 @@ function handleHint(bugId: string) {
           :hovered="{ scale: 1.06, y: -2 }"
           :tapped="{ scale: 0.9, rotate: -2 }"
           class="btn"
+          :disabled="isCompiling"
           @click="handleCheck"
         >
-          ▶ COMPILAR
+          {{ isCompiling ? "⏳ COMPILANDO…" : "▶ COMPILAR" }}
         </button>
         <button v-motion :hovered="{ scale: 1.06 }" :tapped="{ scale: 0.9 }" class="btn ghost" @click="handleReset">
           ↺ REINICIAR
         </button>
       </div>
 
-      <BugList :exercise="exercise" :ex-state="es" :just-solved-id="justSolvedId" @hint="handleHint" />
+      <BugList :exercise="exercise" :ex-state="es" :just-completed="justCompleted" @hint="handleHint" />
       <ConsoleLog :log="es.log" />
     </div>
   </div>
@@ -205,5 +207,9 @@ function handleHint(bugId: string) {
   background: var(--bg-panel);
   color: var(--cream-dim);
   outline-color: var(--border-light);
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 </style>
