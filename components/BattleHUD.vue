@@ -23,7 +23,10 @@ const defeated = computed(() => es.value.completed);
 const effectiveness = computed(() => typeEffectiveness(exercise.value.topic));
 const isSuperEffective = computed(() => effectiveness.value > 1);
 
+const arenaRef = ref<HTMLElement | null>(null);
+const playerSideRef = ref<HTMLElement | null>(null);
 const enemyRef = ref<HTMLElement | null>(null);
+const weaponFlyRef = ref<HTMLElement | null>(null);
 const playerAttacking = ref(false);
 const playerHurt = ref(false);
 const toast = ref<string | null>(null);
@@ -35,20 +38,61 @@ function showToast(msg: string) {
   toastTimer = setTimeout(() => (toast.value = null), 1600);
 }
 
+/** Manda el sprite del arma volando desde el personaje hasta el enemigo
+ * (medido en píxeles reales, no en % fijo, para que la trayectoria sea
+ * correcta con cualquier ancho de pantalla) y recién dispara onHit() al
+ * conectar — así el golpe del arma y la reacción del bicho quedan
+ * causalmente juntos en vez de simultáneos y desconectados. */
+function throwWeapon(onHit: () => void) {
+  const weaponEl = weaponFlyRef.value;
+  const arenaEl = arenaRef.value;
+  const fromEl = playerSideRef.value;
+  const toEl = enemyRef.value;
+  if (!weaponEl || !arenaEl || !fromEl || !toEl) {
+    onHit();
+    return;
+  }
+
+  const arenaBox = arenaEl.getBoundingClientRect();
+  const fromBox = fromEl.getBoundingClientRect();
+  const toBox = toEl.getBoundingClientRect();
+  const startX = fromBox.right - arenaBox.left - 12;
+  const startY = fromBox.top + fromBox.height / 2 - arenaBox.top;
+  const endX = toBox.left + toBox.width / 2 - arenaBox.left;
+  const endY = toBox.top + toBox.height / 2 - arenaBox.top;
+
+  gsap.killTweensOf(weaponEl);
+  gsap.set(weaponEl, { x: startX, y: startY, opacity: 1, scale: 1, rotate: 0 });
+  gsap.to(weaponEl, {
+    x: endX,
+    y: endY,
+    rotate: 400,
+    duration: 0.22,
+    ease: "power2.in",
+    onComplete: () => {
+      onHit();
+      gsap.to(weaponEl, { opacity: 0, scale: 0.5, duration: 0.18, delay: 0.05 });
+    }
+  });
+}
+
 function hitEnemy(superEffective: boolean) {
   playerAttacking.value = false;
   requestAnimationFrame(() => {
     playerAttacking.value = true;
     setTimeout(() => (playerAttacking.value = false), 380);
   });
-  if (enemyRef.value) {
-    gsap.killTweensOf(enemyRef.value);
-    const tl = gsap.timeline();
-    tl.to(enemyRef.value, { x: 8, duration: 0.05, repeat: 5, yoyo: true, ease: "none" })
-      .set(enemyRef.value, { x: 0 })
-      .fromTo(enemyRef.value, { filter: "brightness(3) saturate(0)" }, { filter: "brightness(1)", duration: 0.3 }, 0);
-  }
-  if (superEffective) showToast("⚡ ¡Es muy efectivo!");
+
+  throwWeapon(() => {
+    if (enemyRef.value) {
+      gsap.killTweensOf(enemyRef.value);
+      const tl = gsap.timeline();
+      tl.to(enemyRef.value, { x: 8, duration: 0.05, repeat: 5, yoyo: true, ease: "none" })
+        .set(enemyRef.value, { x: 0 })
+        .fromTo(enemyRef.value, { filter: "brightness(3) saturate(0)" }, { filter: "brightness(1)", duration: 0.3 }, 0);
+    }
+    if (superEffective) showToast("⚡ ¡Es muy efectivo!");
+  });
 }
 
 function missedAttack(exerciseId: string) {
@@ -88,6 +132,7 @@ watch(
   () => exercise.value.id,
   () => {
     if (enemyRef.value) gsap.set(enemyRef.value, { y: 0, opacity: 1, x: 0, filter: "none" });
+    if (weaponFlyRef.value) gsap.set(weaponFlyRef.value, { opacity: 0 });
   }
 );
 </script>
@@ -101,8 +146,10 @@ watch(
       </span>
     </div>
 
-    <div class="arena">
-      <div class="side player-side">
+    <div ref="arenaRef" class="arena">
+      <img ref="weaponFlyRef" :src="equippedWeapon.image" class="weapon-fly" alt="" />
+
+      <div ref="playerSideRef" class="side player-side">
         <PixelAvatar
           :tier="tierInfo.tier"
           :leveling="false"
@@ -175,6 +222,20 @@ watch(
   justify-content: space-between;
   gap: 0.5rem;
   position: relative;
+}
+.weapon-fly {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 4;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, 0.5)) drop-shadow(0 0 6px var(--amber));
+  will-change: transform;
 }
 .side {
   display: flex;
