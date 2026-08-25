@@ -27,10 +27,11 @@ watch(
   border: 2px solid var(--border-dark);
   outline: 1px solid var(--border-light);
   outline-offset: -2px;
-  padding: 0.7rem 0.9rem;
+  padding: 0.8rem 1rem;
   font-family: "VT323", monospace;
-  font-size: 1.05rem;
-  max-height: 190px;
+  font-size: 1.1rem;
+  min-height: 140px;
+  max-height: 40vh;
   overflow-y: auto;
 }
 .line {

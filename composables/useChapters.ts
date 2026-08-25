@@ -95,7 +95,7 @@ export async function fetchChaptersForAula() {
  * mostrarlo. */
 export async function generateChapterFromText(
   text: string
-): Promise<{ exercises: GeneratedExercise[]; truncated: boolean }> {
+): Promise<{ exercises: GeneratedExercise[]; truncated: boolean; capped: boolean }> {
   const res = await fetch("/api/generate-chapter", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

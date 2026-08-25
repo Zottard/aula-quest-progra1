@@ -146,23 +146,33 @@ export function useGameState() {
   const xpIntoLevel = computed(() => state.xp % XP_PER_LEVEL);
   const tierInfo = computed(() => tierForLevel(level.value));
 
-  const bugsFixed = computed(() =>
-    EXERCISES.reduce((sum, ex) => sum + Object.keys(exState(ex.id).solved).length, 0)
+  // bugsFixed y noHintQuestDone también cuentan capítulos: son logros
+  // genéricos de "resolver cosas", no específicos de la campaña fija de 7
+  // misiones (esa distinción sí importa para questsDone/allComplete, que
+  // literalmente son "completá las 7 misiones" — esos se quedan como están).
+  // Un ejercicio de capítulo no tiene bugs individuales, así que una
+  // resolución completa cuenta como 1 bug cazado (es la unidad atómica de
+  // "resolví algo" ahí). Tampoco tiene sistema de pistas, así que una
+  // resolución de capítulo siempre cuenta como "sin pistas" — es verdad
+  // (nunca tuvo la opción de pedir una), no es una forma de hacer trampa.
+  const bugsFixed = computed(
+    () =>
+      EXERCISES.reduce((sum, ex) => sum + Object.keys(exState(ex.id).solved).length, 0) +
+      chapterExercises.filter((ex) => exState(ex.id).completed).length
   );
   const questsDone = computed(
     () => EXERCISES.filter((ex) => exState(ex.id).completed).length
   );
-  const noHintQuestDone = computed(() =>
-    EXERCISES.some((ex) => {
-      const es = exState(ex.id);
-      return es.completed && Object.keys(es.hinted).length === 0;
-    })
+  const noHintQuestDone = computed(
+    () =>
+      EXERCISES.some((ex) => {
+        const es = exState(ex.id);
+        return es.completed && Object.keys(es.hinted).length === 0;
+      }) || chapterExercises.some((ex) => exState(ex.id).completed)
   );
   const allComplete = computed(() => questsDone.value === EXERCISES.length);
 
-  /** Progreso de los capítulos del aula (separado de las 7 misiones fijas:
-   * no cuenta para badges/allComplete, es contenido extra que asignó el
-   * docente). */
+  /** Progreso de los capítulos del aula. */
   const chaptersDone = computed(() => chapterExercises.filter((ex) => exState(ex.id).completed).length);
 
   function isUnlocked(index: number): boolean {

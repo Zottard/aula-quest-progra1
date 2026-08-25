@@ -51,7 +51,12 @@ const detailError = ref<Record<string, string>>({});
 const deletingId = ref<string | null>(null);
 const copiedCode = ref(false);
 
-const TOTAL_MISIONES = EXERCISES.length;
+// students_overview.quests_done ya cuenta CUALQUIER ejercicio completo (7
+// misiones fijas + capítulos, ver la vista SQL: cuenta todas las claves de
+// game_state.exercises con completed=true, sin filtrar por id) — así que el
+// total mostrado tiene que sumar los capítulos de esta aula o el "X/7" queda
+// mal apenas un alumno resuelve algo de un capítulo.
+const TOTAL_MISIONES = computed(() => EXERCISES.length + chapterExercises.value.length);
 
 function formatDate(iso: string): string {
   try {

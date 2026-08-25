@@ -46,6 +46,7 @@ const generating = ref(false);
 const genError = ref("");
 const reviewExercises = ref<ReviewExercise[] | null>(null);
 const truncatedWarning = ref(false);
+const cappedWarning = ref(false);
 
 const chapterTitle = ref("");
 const publishing = ref(false);
@@ -91,8 +92,9 @@ async function handleGenerate() {
   genError.value = "";
   reviewExercises.value = null;
   try {
-    const { exercises, truncated } = await generateChapterFromText(extractedText.value);
+    const { exercises, truncated, capped } = await generateChapterFromText(extractedText.value);
     truncatedWarning.value = truncated;
+    cappedWarning.value = capped;
     reviewExercises.value = exercises.map((ex) => ({ ...ex, selected: true }));
     if (exercises.length === 0) {
       genError.value = "La IA no encontró ningún ejercicio en este texto.";
@@ -222,6 +224,10 @@ onMounted(loadChapters);
       <p v-if="genError" class="error-box">{{ genError }}</p>
       <p v-if="truncatedWarning" class="hint warn">
         ⚠ El PDF es largo, se procesaron solo los primeros ~15.000 caracteres.
+      </p>
+      <p v-if="cappedWarning" class="hint warn">
+        ⚠ La guía trae más de 10 ejercicios — se generaron solo los primeros 10. Subí el
+        resto en un capítulo aparte si querés incluirlos.
       </p>
     </section>
 

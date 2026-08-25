@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import gsap from "gsap";
+import { EXERCISES } from "~/data/exercises";
 import { moduleFor, MODULES } from "~/data/modules";
 import { useGameState } from "~/composables/useGameState";
 import { useEventBus } from "~/composables/useEventBus";
@@ -7,7 +8,9 @@ import { useEventBus } from "~/composables/useEventBus";
 const { state, exState, tierInfo, equippedWeapon, equippedArmor, typeEffectiveness, findExercise } = useGameState();
 const bus = useEventBus();
 
-const exercise = computed(() => findExercise(state.activeId)!);
+// Mismo fallback que QuestCard.vue: chapterExercises puede tardar en cargar
+// tras un reload si activeId apunta a un capítulo.
+const exercise = computed(() => findExercise(state.activeId) ?? EXERCISES[0]);
 const mod = computed(() => moduleFor(exercise.value.topic));
 const enemySprite = computed(() => (exercise.value.boss ? "/sprites/enemy_boss.png" : mod.value.enemySprite));
 

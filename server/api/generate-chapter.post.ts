@@ -23,10 +23,18 @@
 // gracia del sistema tipo Pokémon.
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 const MAX_INPUT_CHARS = 15000;
+// Techo pedido por el usuario: un capítulo con más de 10 ejercicios "es un
+// montón" para jugar de una — mejor que suba el PDF completo de la guía y
+// que el docente elija qué generar en tandas, a un capítulo gigante. Se lo
+// pedimos al modelo (ahorra tokens de output si el PDF trae muchos más) y
+// además lo garantizamos server-side por si no lo respeta.
+const MAX_EXERCISES = 10;
 
 const SYSTEM_PROMPT = `Sos un asistente que convierte guías de ejercicios de programación en C++ (cátedra de Programación 1, nivel introductorio: variables, cin/cout, operadores aritméticos, if simple) en ejercicios evaluables por un compilador real, para un juego con mecánica tipo Pokémon (cada ejercicio es un "enemigo" de un tipo, y ciertas armas son más efectivas contra ciertos tipos).
 
-Para CADA ejercicio del texto (todos, no solo los que traen ejemplo resuelto):
+Generá COMO MÁXIMO ${MAX_EXERCISES} ejercicios en total. Si el texto trae más, procesá solo los primeros ${MAX_EXERCISES} (en el orden en que aparecen) e ignorá el resto — no hace falta que avises que los recortaste.
+
+Para CADA ejercicio que proceses (de los que traen ejemplo resuelto y de los que no):
 - "title": título corto, ej "Ejercicio 3 · Sueldo del vendedor".
 - "briefing": la consigna para el alumno, en HTML simple (uno o dos <p>), clara. Mismo problema que el original, podés prolijar la redacción pero NO cambiarlo ni agregar datos que no estén.
 - "topic": el tipo de batalla, EXACTAMENTE uno de "operadores" | "ciclos" | "vectores", según qué hace falta para resolverlo:
@@ -100,6 +108,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 502, statusMessage: "DeepSeek devolvió una respuesta que no es JSON válido." });
   }
 
-  const exercises = Array.isArray(parsed?.exercises) ? parsed.exercises : [];
-  return { exercises, truncated, usage: data.usage ?? null };
+  const allExercises = Array.isArray(parsed?.exercises) ? parsed.exercises : [];
+  const capped = allExercises.length > MAX_EXERCISES;
+  const exercises = capped ? allExercises.slice(0, MAX_EXERCISES) : allExercises;
+
+  return { exercises, truncated, capped, usage: data.usage ?? null };
 });

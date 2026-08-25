@@ -1,9 +1,15 @@
 <script setup lang="ts">
+import { EXERCISES } from "~/data/exercises";
 import { useGameState } from "~/composables/useGameState";
 
 const { state, exState, saveCode, checkCode, compiling, resetCode, useHint, findExercise } = useGameState();
 
-const exercise = computed(() => findExercise(state.activeId)!);
+// Fallback a la misión 1: si activeId apunta a un ejercicio de capítulo y la
+// página recién recargó, chapterExercises todavía puede estar vacío (se
+// carga async desde Supabase) — sin este fallback, exercise.value queda
+// undefined por un instante y cualquier .id/.bugs de acá abajo revienta.
+// Se corrige solo apenas termina de cargar (exercise es reactivo).
+const exercise = computed(() => findExercise(state.activeId) ?? EXERCISES[0]);
 const isChapter = computed(() => !!exercise.value.testCases);
 const es = computed(() => exState(exercise.value.id));
 const isCompiling = computed(() => !!compiling[exercise.value.id]);
@@ -24,7 +30,17 @@ watch(
 
 watch(code, (val) => saveCode(exercise.value.id, val));
 
-const gutterLines = computed(() => exercise.value.code.split("\n").map((_, i) => i + 1).join("\n"));
+// Antes esto miraba exercise.value.code (el código ORIGINAL sin editar), así
+// que apenas el alumno agregaba o borraba una línea, la numeración quedaba
+// pegada al tamaño del código inicial — un editor que muestra mal sus
+// propios números de línea no es "cómodo" para nada. Ahora sigue el código
+// que se está editando de verdad.
+const gutterLines = computed(() => code.value.split("\n").map((_, i) => i + 1).join("\n"));
+
+const gutterRef = ref<HTMLElement | null>(null);
+function syncGutterScroll(e: Event) {
+  if (gutterRef.value) gutterRef.value.scrollTop = (e.target as HTMLTextAreaElement).scrollTop;
+}
 
 async function handleCheck() {
   if (isCompiling.value) return;
@@ -87,8 +103,8 @@ function handleHint(bugId: string) {
       </p>
 
       <div class="editor-wrap pxframe">
-        <div class="gutter">{{ gutterLines }}</div>
-        <textarea v-model="code" class="code-input" spellcheck="false" />
+        <div ref="gutterRef" class="gutter">{{ gutterLines }}</div>
+        <textarea v-model="code" class="code-input" spellcheck="false" @scroll="syncGutterScroll" />
       </div>
 
       <div class="actions-row">
@@ -163,7 +179,7 @@ function handleHint(bugId: string) {
   outline-offset: -2px;
   overflow: hidden;
   font-family: "JetBrains Mono", monospace;
-  font-size: 0.86rem;
+  font-size: 0.92rem;
 }
 .gutter {
   padding: 0.85rem 0.6rem;
@@ -172,21 +188,40 @@ function handleHint(bugId: string) {
   user-select: none;
   background: #08060c;
   white-space: pre;
-  line-height: 1.55;
+  line-height: 1.6;
+  /* Mismo alto que .code-input a propósito: en un flex row, un item con
+     height explícito (el textarea) gana contra align-items:stretch y se
+     queda en ese alto, pero el gutter (sin height propio) se estira para
+     igualar el alto NATURAL de su contenido en vez del alto real del
+     textarea — quedaban desincronizados apenas el código no entraba en una
+     pantalla. Poniéndole el mismo height explícito, ambos overflowean
+     "de verdad" y el scroll-sync (@scroll en el textarea) tiene sentido. */
+  height: 60vh;
+  min-height: 420px;
+  max-height: 80vh;
+  overflow-y: hidden;
 }
 .code-input {
   flex: 1;
   background: transparent;
   border: none;
   outline: none;
-  resize: vertical;
   color: var(--cream);
   padding: 0.85rem 0.9rem;
-  line-height: 1.55;
-  min-height: 220px;
+  line-height: 1.6;
+  height: 60vh;
+  min-height: 420px;
+  max-height: 80vh;
   font-family: inherit;
   font-size: inherit;
   tab-size: 4;
+}
+@media (max-width: 640px) {
+  .gutter,
+  .code-input {
+    height: 46vh;
+    min-height: 300px;
+  }
 }
 .actions-row {
   display: flex;
