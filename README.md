@@ -119,6 +119,9 @@ arriba).
   identidades que no deberían mezclarse en la misma sesión de navegador.
 - `middleware/admin-auth.ts` — guard client-side de `/admin/**` (redirige a
   `/admin/login` si no hay sesión docente activa).
+- `composables/useChapters.ts` / `usePdfExtract.ts` — capítulos generados desde un PDF
+  por el docente (extracción, llamado a `/api/generate-chapter`, publicar/listar/borrar
+  en Supabase). Ver sección 10, es la pieza más grande de esta lista.
 
 ---
 
@@ -181,9 +184,11 @@ mejorar visualmente si se consigue un pack de criaturas.
   quizás vida del jugador que baja con intentos fallidos) le daría más peso al RPG.
 - **Solo 3 módulos / 7 misiones**: fácil de extender agregando objetos a `EXERCISES` y,
   si se agrega un módulo nuevo, un `Topic` más en `data/modules.ts`.
-- **Generador de ejercicios por LLM+PDF: solo la base está preparada, no el generador.**
-  La tabla `exercise_sets` (docente sube PDF → LLM arma ejercicios) existe en el schema
-  de Supabase pero no hay ninguna UI ni función que la use todavía — ver sección 9.
+- **Los capítulos (sección 10) dependen de que el PDF tenga ejemplos ya resueltos en
+  texto seleccionable** (no un PDF escaneado/imagen — `pdfjs-dist` no hace OCR). Si un
+  ejercicio de la guía no trae ningún ejemplo resuelto, se descarta silenciosamente
+  (nunca se inventa uno) — el docente puede terminar con menos ejercicios generados que
+  los que tenía el PDF, y eso es esperado, no un bug.
 - **La compilación depende de un servicio externo gratuito sin SLA** (Wandbox — ver
   sección 2, `useCompiler.ts`). No tiene API key ni cuota fija, así que si Wandbox cae o
   cambia de política (ya le pasó a la Piston API pública, la alternativa obvia, que se
@@ -214,17 +219,19 @@ detalle completo, incluyendo un paso manual obligatorio en el dashboard de Supab
 
 ## 8. Cómo desplegar
 
-Actualmente se despliega a mano vía el MCP de Vercel, mandando el árbol de archivos
-completo del proyecto (source, no el build) en cada cambio — no hay CI/CD conectado a
-un repo Git todavía. Si conectás este repo a Vercel vía Git (dashboard de Vercel →
-Import Project), se puede activar deploy automático en cada push y dejar de mandar el
-árbol de archivos a mano.
+El proyecto de Vercel (`aula-quest-progra1`) está conectado al repo de GitHub
+(`Zottard/aula-quest-progra1`) — cada `git push` a `main` deploya solo. Producción:
+https://aula-quest-progra1.vercel.app.
 
-**Importante:** como el deploy es un push de archivos y no un `git push`/build con env
-propio, las variables `NUXT_PUBLIC_SUPABASE_URL` / `NUXT_PUBLIC_SUPABASE_ANON_KEY` **no
-se toman de ningún `.env` local** — hay que cargarlas a mano en el dashboard de Vercel
-(Project Settings → Environment Variables) para que el panel docente funcione en
-producción. Ver `.env.example` para los valores actuales del proyecto Supabase.
+(Hubo un `cpp-quest` anterior deployado a mano vía el MCP de Vercel, sin conexión a Git;
+quedó frozen en su último deploy manual cuando se migró a este proyecto conectado — no
+es el que está en uso.)
+
+**Importante:** las variables de entorno **no viajan con el repo** — hay que cargarlas a
+mano en el dashboard de Vercel (Project Settings → Environment Variables) del proyecto
+`aula-quest-progra1`: `NUXT_PUBLIC_SUPABASE_URL`, `NUXT_PUBLIC_SUPABASE_ANON_KEY` y
+`DEEPSEEK_API_KEY` (ver `.env.example` y sección 10). El código se actualiza solo con el
+push; las env vars son un paso manual aparte, y solo hace falta repetirlo si cambian.
 
 ---
 
@@ -281,13 +288,13 @@ que entrar al dashboard y tildarlo una sola vez.
   `levelup`, con `xp_gained`/`hinted`) alimentado por el event bus del juego. Pensado
   para analítica pedagógica (ej. qué bug traba más a la clase), todavía sin UI que lo
   consuma.
-- `exercise_sets` — preparado para la futura función **LLM + PDF**: el docente sube un
-  PDF de contenido y un LLM genera ejercicios (`generated_exercises jsonb`, `status`
-  draft/published/archived, `topic` restringido a los 3 módulos del curso). Hoy es solo
-  schema — no hay endpoint ni UI que la llene todavía.
+- `exercise_sets` — capítulos generados desde un PDF (ver sección 10):
+  `generated_exercises jsonb`, `status` draft/published/archived, `topic` opcional
+  (informativo, no se usa para nada en el cliente).
 - RLS en todas las tablas: un docente solo ve/edita aulas donde `teacher_id = auth.uid()`
-  y alumnos de esas aulas (via join); un alumno solo ve/edita su propia fila
-  (`auth_user_id = auth.uid()`).
+  y alumnos/capítulos de esas aulas (via join); un alumno solo ve/edita su propia fila
+  de `students` (`auth_user_id = auth.uid()`), y solo puede LEER capítulos `published` de
+  su propia aula (`exercise_sets_select_student`, sin acceso a los borradores del docente).
 
 ### 9.5 Páginas y rutas nuevas
 | Ruta | Rol |
@@ -295,5 +302,83 @@ que entrar al dashboard y tildarlo una sola vez.
 | `/admin/login` | Login/signup del docente (email+password) |
 | `/admin` | Lista de aulas del docente + crear aula nueva |
 | `/admin/aulas/[id]` | Roster de alumnos de una aula + detalle por misión/bug |
+| `/admin/aulas/[id]/capitulos` | Subir PDF → generar capítulo con IA → publicar (sección 10) |
 
 `middleware/admin-auth.ts` protege todo `/admin/**` excepto `/admin/login`.
+
+---
+
+## 10. Capítulos: convertir un PDF de ejercicios en contenido jugable
+
+### 10.1 Idea
+El docente sube el PDF de una guía de ejercicios (de las de "escribí un programa que
+lea X por teclado y calcule Y" — no del estilo "arreglá el bug" de las 7 misiones fijas).
+Una IA (DeepSeek) arma un "capítulo" con esos ejercicios, el docente revisa/publica en
+una aula puntual, y a los alumnos de esa aula les aparece como una sección más en el
+juego (grupo "📘 Capítulo" en `QuestTabs.vue`, siempre desbloqueada).
+
+### 10.2 De dónde salen los casos de prueba (y cuándo la IA sí inventa uno)
+Estas guías (a diferencia del código de las 7 misiones) no fijan la salida exacta que
+tiene que imprimir el programa — dos soluciones correctas pueden imprimir cosas distintas
+con el mismo resultado. Por eso, cuando el ejercicio **trae** un ejemplo ya resuelto en
+el texto ("si se ingresan 3 y 8, A=8 y B=3"), el prompt de
+`server/api/generate-chapter.post.ts` le pide a la IA que lo **extraiga tal cual** —
+`testCases: [{ stdin, expectedValues, computed: false }]` — para que el "oráculo" de
+corrección salga del enunciado humano, no del modelo.
+
+Pero en la práctica no todos los ejercicios de una guía real traen ejemplo (probamos con
+una guía real de la cátedra y justo el ejercicio 1 no tenía). Descartar esos en silencio
+significaba perder ejercicios sin que el docente se enterara. Así que para esos casos la
+IA sí inventa un caso simple aplicando la fórmula del enunciado, pero lo marca
+**`computed: true`** — la pantalla de publicación (`pages/admin/aulas/[id]/capitulos.vue`)
+resalta esos casos con una advertencia y los deja **editables** (stdin y resultado
+esperado, como texto) para que el docente verifique o corrija la cuenta antes de
+publicar. Nunca se publica un caso "computed" sin que el docente lo haya podido ver.
+
+### 10.3 Cómo se corrige (todo con el compilador real, sin la IA)
+`checkCode()` en `useGameState.ts` detecta `exercise.testCases` y usa un camino distinto
+al de las 7 misiones: corre el programa del alumno **una vez por cada caso**, pasándole
+`stdin` real vía Wandbox (ver `useCompiler.ts`, que ahora soporta un segundo parámetro
+`stdin`), y en vez de exigir una salida exacta busca que **cada `expectedValue` aparezca**
+en la salida (`outputContainsValue()`): si el valor esperado es numérico, compara números
+con tolerancia (para no romper por formato de decimales); si es texto, hace un contains
+case-insensitive. Todo o nada por ejercicio, igual que las 7 misiones: si pasan todos los
+casos se acredita `xpReward` (60 XP por defecto) de una sola vez.
+
+### 10.4 DeepSeek: por qué `deepseek-chat` y no `deepseek-reasoner`
+Convertir texto de un enunciado en JSON estructurado es extracción/formato, no
+razonamiento multi-paso — `deepseek-chat` (alias del modelo "flash" más nuevo de
+DeepSeek al momento de escribir esto) lo resuelve bien y sale muchísimo más barato que
+`deepseek-reasoner`, que gasta tokens de más en una cadena de razonamiento que acá no
+hace falta. Un llamado real de prueba con un ejercicio simple costó ~144 tokens totales.
+
+Control de costo adicional: el texto del PDF se extrae 100% en el navegador
+(`composables/usePdfExtract.ts`, vía `pdfjs-dist` — cero costo de IA en ese paso) y se
+recorta a los primeros ~15.000 caracteres antes de mandarlo al modelo
+(`MAX_INPUT_CHARS` en `generate-chapter.post.ts`) para poner un techo duro al gasto por
+PDF, sea cual sea su tamaño.
+
+### 10.5 Flujo completo
+1. **`composables/usePdfExtract.ts`** (`extractPdfText`) — extrae el texto del PDF en el
+   navegador con `pdfjs-dist`, colapsando espacios/saltos de línea repetidos.
+2. **`server/api/generate-chapter.post.ts`** — recibe ese texto, llama a DeepSeek con el
+   prompt de extracción, devuelve `{ exercises, truncated, usage }`. Corre server-side
+   (Nitro function) para que `DEEPSEEK_API_KEY` nunca llegue al bundle del cliente —
+   funciona en Vercel aunque el resto de la app sea `ssr:false`, las rutas de `server/api`
+   son independientes de eso.
+3. **`pages/admin/aulas/[id]/capitulos.vue`** — el docente sube el PDF, ve el texto
+   extraído (colapsable), pide la generación, revisa la lista resultante (puede
+   desmarcar ejercicios, editar título/consigna), le pone un título al capítulo y
+   publica — inserta una fila en `exercise_sets` con `status: 'published'`.
+4. **`composables/useChapters.ts`** (`fetchChaptersForAula`) — se llama desde `app.vue`
+   al montar y cada vez que `state.aulaId` cambia (alumno recién registrado/logueado);
+   trae los capítulos `published` del aula del alumno y los mapea a `Exercise[]` con
+   `topic: "capitulo"` (ver `data/modules.ts` — tipo neutral en el sistema de batalla,
+   ningún arma tiene afinidad especial) y un código inicial en blanco (a diferencia de
+   las 7 misiones, acá el alumno escribe el programa entero, no arregla uno roto).
+
+### 10.6 Env var
+`DEEPSEEK_API_KEY` en `runtimeConfig` (NO `runtimeConfig.public` — a propósito, para que
+solo la lea el server). Se saca en https://platform.deepseek.com. Sin esta variable, el
+resto de la app funciona igual; el botón "Generar con IA" del panel docente falla con un
+error claro (500 desde el endpoint) en vez de romper nada más.

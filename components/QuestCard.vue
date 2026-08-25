@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { EXERCISES } from "~/data/exercises";
 import { useGameState } from "~/composables/useGameState";
 
-const { state, exState, saveCode, checkCode, compiling, resetCode, useHint } = useGameState();
+const { state, exState, saveCode, checkCode, compiling, resetCode, useHint, findExercise } = useGameState();
 
-const exercise = computed(() => EXERCISES.find((e) => e.id === state.activeId)!);
+const exercise = computed(() => findExercise(state.activeId)!);
+const isChapter = computed(() => !!exercise.value.testCases);
 const es = computed(() => exState(exercise.value.id));
 const isCompiling = computed(() => !!compiling[exercise.value.id]);
 
@@ -75,7 +75,11 @@ function handleHint(bugId: string) {
       style="margin-top: 1rem"
     >
       <h2 class="quest-title">{{ exercise.boss ? "👑 " : "" }}{{ exercise.title }}</h2>
-      <p class="quest-sub">
+      <p v-if="isChapter" class="quest-sub">
+        Escribí el programa completo a partir del enunciado y compilá para verificar
+        ({{ exercise.testCases!.length }} caso{{ exercise.testCases!.length > 1 ? "s" : "" }} de prueba).
+      </p>
+      <p v-else class="quest-sub">
         {{ exercise.bugs.length }} bug{{ exercise.bugs.length > 1 ? "s" : "" }} escondido{{
           exercise.bugs.length > 1 ? "s" : ""
         }}
@@ -103,7 +107,7 @@ function handleHint(bugId: string) {
         </button>
       </div>
 
-      <BugList :exercise="exercise" :ex-state="es" :just-completed="justCompleted" @hint="handleHint" />
+      <BugList v-if="!isChapter" :exercise="exercise" :ex-state="es" :just-completed="justCompleted" @hint="handleHint" />
       <ConsoleLog :log="es.log" />
     </div>
   </div>

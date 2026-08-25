@@ -1,23 +1,25 @@
 <script setup lang="ts">
 import gsap from "gsap";
-import { EXERCISES } from "~/data/exercises";
 import { moduleFor, MODULES } from "~/data/modules";
 import { useGameState } from "~/composables/useGameState";
 import { useEventBus } from "~/composables/useEventBus";
 
-const { state, exState, tierInfo, equippedWeapon, equippedArmor, typeEffectiveness } = useGameState();
+const { state, exState, tierInfo, equippedWeapon, equippedArmor, typeEffectiveness, findExercise } = useGameState();
 const bus = useEventBus();
 
-const exercise = computed(() => EXERCISES.find((e) => e.id === state.activeId)!);
+const exercise = computed(() => findExercise(state.activeId)!);
 const mod = computed(() => moduleFor(exercise.value.topic));
 const enemySprite = computed(() => (exercise.value.boss ? "/sprites/enemy_boss.png" : mod.value.enemySprite));
 
 const es = computed(() => exState(exercise.value.id));
+// Los ejercicios de capítulo no tienen bugs[] (se resuelven todo-o-nada por
+// casos de prueba), así que no hay "HP restante" fraccionario que mostrar:
+// la barra queda llena hasta completar, y ahí baja a 0 de una.
 const totalXp = computed(() => exercise.value.bugs.reduce((s, b) => s + b.xp, 0));
 const remainingXp = computed(() =>
   exercise.value.bugs.reduce((s, b) => s + (es.value.solved[b.id] ? 0 : b.xp), 0)
 );
-const hpPct = computed(() => Math.max(0, Math.round((remainingXp.value / totalXp.value) * 100)));
+const hpPct = computed(() => (totalXp.value === 0 ? 100 : Math.max(0, Math.round((remainingXp.value / totalXp.value) * 100))));
 const defeated = computed(() => es.value.completed);
 
 const effectiveness = computed(() => typeEffectiveness(exercise.value.topic));

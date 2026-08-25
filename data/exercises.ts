@@ -8,18 +8,52 @@ export interface Bug {
   xp: number;
 }
 
+/** Un caso de prueba para ejercicios "de capítulo" (ver TestCase abajo):
+ * se le da este stdin al programa completo que escribió el alumno, y se
+ * espera encontrar cada uno de expectedValues en algún lado de su stdout
+ * (comparación flexible, no salida exacta — ver outputContainsValue() en
+ * useCompiler.ts). Los valores salen de los ejemplos ya resueltos que trae
+ * el enunciado original, no los inventa la IA. */
+export interface TestCase {
+  stdin: string;
+  expectedValues: string[];
+  /** true si la IA tuvo que inventar este caso porque el enunciado original
+   * no traía ningún ejemplo ya resuelto (ver server/api/generate-chapter.post.ts).
+   * El docente lo revisa/corrige a mano en la pantalla de publicación antes de
+   * que quede visible para los alumnos — no se confía a ciegas en la cuenta
+   * que hizo la IA. Ausente/false = el valor salió literal del enunciado. */
+  computed?: boolean;
+}
+
 export interface Exercise {
   id: string;
   title: string;
   concept: string;
   briefing: string;
   code: string;
-  /** Salida exacta (stdout) del programa ya arreglado. La misión se da por
-   * completa cuando lo que el compilador real corre coincide con esto —
-   * ver composables/useCompiler.ts y checkCode() en useGameState.ts. No
-   * hay chequeo por bug individual: cualquier forma válida de arreglar el
-   * programa que produzca esta salida cuenta como resuelta. */
-  expectedOutput: string;
+  /** Salida exacta (stdout) del programa ya arreglado, para las 7 misiones
+   * fijas de "encontrá el bug". La misión se da por completa cuando lo que
+   * el compilador real corre coincide con esto — ver composables/useCompiler.ts
+   * y checkCode() en useGameState.ts. No hay chequeo por bug individual:
+   * cualquier forma válida de arreglar el programa que produzca esta salida
+   * cuenta como resuelta. No se usa en ejercicios de capítulo (ver testCases). */
+  expectedOutput?: string;
+  /** Presente solo en ejercicios "de capítulo" (generados desde un PDF por
+   * el docente, ver useChapters.ts): el alumno escribe el programa entero
+   * desde cero (no hay un "código roto" que arreglar) y se corre una vez
+   * por cada caso, con matching flexible en vez de salida exacta, porque acá
+   * el enunciado no fija el formato de impresión. */
+  testCases?: TestCase[];
+  /** XP total al completar un ejercicio de capítulo (no tiene bugs[] con XP
+   * individual). Ignorado si testCases no está presente. */
+  xpReward?: number;
+  /** Id del exercise_sets de Supabase del que salió este ejercicio, para
+   * poder filtrar/agrupar por capítulo en la UI. Solo en ejercicios de capítulo. */
+  chapterId?: string;
+  /** Título del capítulo (exercise_sets.title), repetido en cada ejercicio
+   * del capítulo para poder agrupar/etiquetar en QuestTabs.vue sin tener
+   * que ir a buscar el exercise_sets aparte. */
+  chapterTitle?: string;
   bugs: Bug[];
   boss?: boolean;
   topic: Topic;

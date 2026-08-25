@@ -15,7 +15,13 @@ export default defineNuxtConfig({
   // Credenciales públicas de Supabase (anon/publishable key, protegida por RLS
   // en la base — no es secreta). Se leen de variables de entorno con prefijo
   // NUXT_PUBLIC_ para que Nuxt las exponga al cliente. Ver .env.example.
+  //
+  // deepseekApiKey NO va dentro de `public`: a propósito, para que Nitro la
+  // lea solo del lado servidor (server/api/generate-chapter.post.ts) y nunca
+  // viaje al bundle del cliente — es una key paga de verdad, a diferencia de
+  // la anon key de Supabase.
   runtimeConfig: {
+    deepseekApiKey: process.env.DEEPSEEK_API_KEY ?? "",
     public: {
       supabaseUrl: process.env.NUXT_PUBLIC_SUPABASE_URL ?? "",
       supabaseAnonKey: process.env.NUXT_PUBLIC_SUPABASE_ANON_KEY ?? ""

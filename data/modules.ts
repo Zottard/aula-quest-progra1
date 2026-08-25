@@ -2,7 +2,11 @@
 // El sistema de efectividad (como en los juegos de monstruitos) usa estos tipos:
 // el arma equipada tiene una afinidad de tipo, y si coincide con el tema del
 // ejercicio activo, el golpe es "muy efectivo" (bonus de XP).
-export type Topic = "operadores" | "ciclos" | "vectores";
+// "capitulo" no es un tema del programa fijo, sino el "tipo" genérico que
+// usan los ejercicios que un docente generó a partir de un PDF (ver
+// composables/useChapters.ts) — siempre neutral en el sistema de batalla,
+// ningún arma tiene afinidad especial contra él.
+export type Topic = "operadores" | "ciclos" | "vectores" | "capitulo";
 
 export interface ModuleInfo {
   id: Topic;
@@ -37,6 +41,14 @@ export const MODULES: ModuleInfo[] = [
     color: "#5eead4",
     enemySprite: "/sprites/enemy_vectores.png",
     description: "Arrays: recorrido, límites y búsqueda."
+  },
+  {
+    id: "capitulo",
+    title: "Capítulo del profe",
+    short: "Capítulo",
+    color: "#b0a8c2",
+    enemySprite: "/sprites/enemy_operadores.png",
+    description: "Ejercicios armados por tu docente a partir de una guía."
   }
 ];
 

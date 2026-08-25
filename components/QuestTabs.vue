@@ -1,16 +1,30 @@
 <script setup lang="ts">
-import { EXERCISES } from "~/data/exercises";
+import { EXERCISES, type Exercise } from "~/data/exercises";
 import { MODULES, moduleFor } from "~/data/modules";
 import { useGameState } from "~/composables/useGameState";
 
-const { state, exState, isUnlocked, setActive } = useGameState();
+const { state, exState, isUnlocked, setActive, chapterExercises } = useGameState();
 
 const groups = computed(() =>
-  MODULES.map((m) => ({
-    mod: m,
-    items: EXERCISES.map((ex, idx) => ({ ex, idx })).filter(({ ex }) => ex.topic === m.id && !ex.boss)
-  })).concat([{ mod: null as any, items: EXERCISES.map((ex, idx) => ({ ex, idx })).filter(({ ex }) => ex.boss) }])
+  MODULES.filter((m) => m.id !== "capitulo")
+    .map((m) => ({
+      mod: m,
+      items: EXERCISES.map((ex, idx) => ({ ex, idx })).filter(({ ex }) => ex.topic === m.id && !ex.boss)
+    }))
+    .concat([{ mod: null as any, items: EXERCISES.map((ex, idx) => ({ ex, idx })).filter(({ ex }) => ex.boss) }])
 );
+
+/** Capítulos del docente, agrupados por chapterId — siempre desbloqueados
+ * (no forman parte de la progresión lineal de las 7 misiones fijas). */
+const chapterGroups = computed(() => {
+  const byId = new Map<string, { title: string; items: { ex: Exercise; idx: number }[] }>();
+  chapterExercises.forEach((ex, idx) => {
+    const key = ex.chapterId ?? "sin-capitulo";
+    if (!byId.has(key)) byId.set(key, { title: ex.chapterTitle ?? "Capítulo", items: [] });
+    byId.get(key)!.items.push({ ex, idx });
+  });
+  return [...byId.values()];
+});
 </script>
 
 <template>
@@ -44,6 +58,26 @@ const groups = computed(() =>
           @click="setActive(ex.id)"
         >
           {{ ex.boss ? "👑" : `M${idx + 1}` }}
+        </button>
+      </div>
+    </div>
+
+    <div v-for="chGroup in chapterGroups" :key="chGroup.title" class="group">
+      <div class="group-label" style="color: var(--cream-dim)">📘 {{ chGroup.title }}</div>
+      <div class="quest-tabs">
+        <button
+          v-for="({ ex }, i) in chGroup.items"
+          :key="ex.id"
+          v-motion
+          :hovered="{ scale: 1.08, y: -3 }"
+          :tapped="{ scale: 0.92 }"
+          class="quest-tab"
+          :class="{ active: ex.id === state.activeId, done: exState(ex.id).completed }"
+          style="--tab-color: #b0a8c2"
+          :title="ex.title"
+          @click="setActive(ex.id)"
+        >
+          C{{ i + 1 }}
         </button>
       </div>
     </div>

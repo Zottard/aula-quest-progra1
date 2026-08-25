@@ -1,12 +1,12 @@
 import { reactive, computed } from "vue";
-import { EXERCISES } from "~/data/exercises";
+import { EXERCISES, type Exercise } from "~/data/exercises";
 import { XP_PER_LEVEL, levelFromXp, tierForLevel } from "~/data/tiers";
 import { WEAPONS, ARMORS, PETS, type EquipItem, type UnlockCondition } from "~/data/items";
 import type { Topic } from "~/data/modules";
 import { SKILLS } from "~/data/skills";
 import { useSound } from "~/composables/useSound";
 import { useEventBus } from "~/composables/useEventBus";
-import { useCompiler, normalizeOutput } from "~/composables/useCompiler";
+import { useCompiler, normalizeOutput, outputContainsValue } from "~/composables/useCompiler";
 
 const SAVE_KEY = "cppQuestSave_v2";
 
@@ -123,6 +123,24 @@ function exState(id: string): ExerciseState {
 // propósito, es efímero y por eso no va en localStorage.
 const compiling = reactive<Record<string, boolean>>({});
 
+/** Ejercicios "de capítulo" del aula del alumno (generados por el docente
+ * desde un PDF, ver useChapters.ts). No viven en localStorage — se
+ * recargan desde Supabase en cada sesión, así que no se persisten en
+ * GameState.exercises (esa parte sí, es el progreso, no el contenido). */
+const chapterExercises = reactive<Exercise[]>([]);
+
+function setChapterExercises(exs: Exercise[]) {
+  chapterExercises.splice(0, chapterExercises.length, ...exs);
+}
+
+/** Busca un ejercicio por id entre las 7 misiones fijas y los capítulos
+ * dinámicos del aula — la mayoría de las funciones de abajo necesitan esto
+ * en vez de EXERCISES.find() a secas, porque activeId puede apuntar a
+ * cualquiera de los dos. */
+function findExercise(id: string): Exercise | undefined {
+  return EXERCISES.find((e) => e.id === id) ?? chapterExercises.find((e) => e.id === id);
+}
+
 export function useGameState() {
   const level = computed(() => levelFromXp(state.xp));
   const xpIntoLevel = computed(() => state.xp % XP_PER_LEVEL);
@@ -141,6 +159,11 @@ export function useGameState() {
     })
   );
   const allComplete = computed(() => questsDone.value === EXERCISES.length);
+
+  /** Progreso de los capítulos del aula (separado de las 7 misiones fijas:
+   * no cuenta para badges/allComplete, es contenido extra que asignó el
+   * docente). */
+  const chaptersDone = computed(() => chapterExercises.filter((ex) => exState(ex.id).completed).length);
 
   function isUnlocked(index: number): boolean {
     if (index === 0) return true;
@@ -307,9 +330,17 @@ export function useGameState() {
   /** Compila y corre el código con un compilador real (ver useCompiler.ts).
    * Todo o nada: la misión se resuelve completa cuando la salida coincide
    * con exercise.expectedOutput, sin importar CÓMO se haya arreglado el
-   * código — no hay chequeo por bug individual. */
+   * código — no hay chequeo por bug individual.
+   *
+   * Los ejercicios "de capítulo" (exercise.testCases presente, ver
+   * useChapters.ts) usan un camino de corrección distinto: se corre el
+   * programa una vez por cada caso con su stdin, y en vez de salida exacta
+   * se busca que aparezcan los valores clave esperados (outputContainsValue
+   * en useCompiler.ts) — el enunciado del PDF no fija un formato de
+   * impresión, así que exigir un match literal penalizaría a alumnos que
+   * resuelven bien pero imprimen distinto. */
   async function checkCode(exerciseId: string, code: string) {
-    const exercise = EXERCISES.find((e) => e.id === exerciseId);
+    const exercise = findExercise(exerciseId);
     if (!exercise) return;
     const es = exState(exerciseId);
     es.savedCode = code;
@@ -322,6 +353,76 @@ export function useGameState() {
 
     compiling[exerciseId] = true;
     const { runCpp } = useCompiler();
+
+    if (exercise.testCases && exercise.testCases.length > 0) {
+      for (let i = 0; i < exercise.testCases.length; i++) {
+        const tc = exercise.testCases[i];
+        const result = await runCpp(code, tc.stdin);
+        const label = `Caso ${i + 1}/${exercise.testCases.length}`;
+
+        if (result.status === "network_error") {
+          compiling[exerciseId] = false;
+          pushLog(exerciseId, { type: "sys", text: "⚠ No se pudo conectar con el compilador. Probá de nuevo." });
+          return;
+        }
+        if (result.status === "timeout") {
+          compiling[exerciseId] = false;
+          pushLog(exerciseId, { type: "err", text: `✖ ${label}: tu programa no terminó a tiempo.` });
+          sfxWrong();
+          bus.emit("wrong", { exerciseId });
+          return;
+        }
+        if (result.status === "compile_error") {
+          compiling[exerciseId] = false;
+          pushLog(exerciseId, { type: "err", text: `✖ Error de compilación:\n${result.compileError}` });
+          sfxWrong();
+          bus.emit("wrong", { exerciseId });
+          return;
+        }
+        if (result.status === "runtime_error") {
+          compiling[exerciseId] = false;
+          pushLog(exerciseId, {
+            type: "err",
+            text: `✖ ${label}: compiló pero falló al correr:\n${result.stderr || "(sin mensaje)"}`
+          });
+          sfxWrong();
+          bus.emit("wrong", { exerciseId });
+          return;
+        }
+
+        const missing = tc.expectedValues.filter((v) => !outputContainsValue(result.stdout, v));
+        if (missing.length > 0) {
+          compiling[exerciseId] = false;
+          pushLog(exerciseId, {
+            type: "err",
+            text: `✖ ${label}: no encontré ${missing.join(", ")} en la salida de tu programa.\nSalida:\n${result.stdout || "(sin salida)"}`
+          });
+          sfxWrong();
+          bus.emit("wrong", { exerciseId });
+          return;
+        }
+
+        pushLog(exerciseId, { type: "ok", text: `✔ ${label} resuelto.` });
+      }
+
+      compiling[exerciseId] = false;
+      const before = level.value;
+      const xpGain = exercise.xpReward ?? 60;
+      state.xp += xpGain;
+      es.completed = true;
+      pushLog(exerciseId, { type: "ok", text: `🏆 Capítulo completo. +${xpGain} XP.` });
+      sfxSolve();
+      sfxComplete();
+      bus.emit("solved", { exerciseId, bugId: null, superEffective: false, xpGain, hinted: false });
+      bus.emit("complete", { exerciseId });
+      persist();
+      if (levelFromXp(state.xp) > before) {
+        sfxLevelUp();
+        bus.emit("levelup", { level: level.value, title: tierInfo.value.title });
+      }
+      return;
+    }
+
     const result = await runCpp(code);
     compiling[exerciseId] = false;
 
@@ -358,7 +459,7 @@ export function useGameState() {
     }
 
     const actual = normalizeOutput(result.stdout);
-    const expected = normalizeOutput(exercise.expectedOutput);
+    const expected = normalizeOutput(exercise.expectedOutput ?? "");
 
     if (actual !== expected) {
       pushLog(exerciseId, {
@@ -415,7 +516,7 @@ export function useGameState() {
   }
 
   function resetCode(exerciseId: string) {
-    const exercise = EXERCISES.find((e) => e.id === exerciseId);
+    const exercise = findExercise(exerciseId);
     if (!exercise) return;
     exState(exerciseId).savedCode = exercise.code;
     persist();
@@ -461,6 +562,11 @@ export function useGameState() {
     resetCode,
     toggleMute,
     resetProgress,
+    // capítulos (contenido del docente generado desde un PDF)
+    chapterExercises,
+    setChapterExercises,
+    findExercise,
+    chaptersDone,
     XP_PER_LEVEL,
     // identidad
     hasIdentity,

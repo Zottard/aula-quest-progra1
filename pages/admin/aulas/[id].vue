@@ -165,10 +165,13 @@ onMounted(loadAll);
           <div class="eyebrow">// c++ quest — panel docente</div>
           <h1>{{ aula?.name }}</h1>
         </div>
-        <div class="join-code-row" @click="copyCode">
-          <span class="join-code-label">código:</span>
-          <span class="join-code">{{ aula?.join_code }}</span>
-          <span class="copy-hint">{{ copiedCode ? "¡copiado!" : "copiar" }}</span>
+        <div class="header-actions">
+          <NuxtLink :to="`/admin/aulas/${aulaId}/capitulos`" class="btn ghost">📘 Capítulos</NuxtLink>
+          <div class="join-code-row" @click="copyCode">
+            <span class="join-code-label">código:</span>
+            <span class="join-code">{{ aula?.join_code }}</span>
+            <span class="copy-hint">{{ copiedCode ? "¡copiado!" : "copiar" }}</span>
+          </div>
         </div>
       </header>
 
@@ -279,6 +282,12 @@ h1 {
   margin: 0.5rem 0 0;
   text-shadow: 2px 2px 0 var(--border-dark);
 }
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
 .join-code-row {
   display: flex;
   align-items: center;
@@ -381,6 +390,8 @@ h1 {
   background: var(--amber);
   color: #1a1509;
   font-weight: 700;
+  text-decoration: none;
+  display: inline-block;
 }
 .btn.ghost {
   background: var(--bg-panel);

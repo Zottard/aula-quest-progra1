@@ -28,7 +28,7 @@ interface WandboxResponse {
 }
 
 export function useCompiler() {
-  async function runCpp(code: string): Promise<CompileResult> {
+  async function runCpp(code: string, stdin?: string): Promise<CompileResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
 
@@ -41,6 +41,7 @@ export function useCompiler() {
           code,
           compiler: COMPILER,
           options: "warning",
+          stdin: stdin ?? "",
           "compiler-option-raw": SANITIZE_FLAGS
         })
       });
@@ -95,4 +96,29 @@ export function normalizeOutput(s: string): string {
     .map((l) => l.replace(/[ \t]+$/, ""))
     .join("\n")
     .trim();
+}
+
+const NUMERIC_RE = /^-?\d+(?:[.,]\d+)?%?$/;
+
+/** Chequeo de salida "libre" para los capítulos armados desde un PDF: en vez
+ * de exigir una salida exacta (el enunciado no fija el formato de impresión,
+ * a diferencia de las 7 misiones fijas), busca que el valor esperado
+ * aparezca en algún lado de la salida real del alumno.
+ *
+ * Si el valor esperado es numérico, compara números (con tolerancia, para
+ * no romper por redondeo/formato de decimales) en vez de exigir que el
+ * string aparezca literal — así "26.12" matchea aunque el alumno haya
+ * impuesto "26.1200" o "IMC: 26.12". Si no es numérico, hace un contains de
+ * texto case-insensitive. */
+export function outputContainsValue(stdout: string, expected: string): boolean {
+  const clean = expected.trim();
+  if (!clean) return true;
+
+  if (NUMERIC_RE.test(clean)) {
+    const target = parseFloat(clean.replace(",", "."));
+    const found = [...stdout.matchAll(/-?\d+(?:[.,]\d+)?/g)].map((m) => parseFloat(m[0].replace(",", ".")));
+    return found.some((n) => Math.abs(n - target) < 0.05);
+  }
+
+  return normalizeOutput(stdout).toLowerCase().includes(clean.toLowerCase());
 }
