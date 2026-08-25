@@ -358,7 +358,15 @@ export function useGameState() {
       for (let i = 0; i < exercise.testCases.length; i++) {
         const tc = exercise.testCases[i];
         const result = await runCpp(code, tc.stdin);
-        const label = `Caso ${i + 1}/${exercise.testCases.length}`;
+        // Mostramos siempre qué input se probó (casi siempre ya está en el
+        // propio enunciado, así que no hay nada que "esconder") — si no, el
+        // alumno ve un error sin poder saber con qué valores falló.
+        const inputList = tc.stdin
+          .split("\n")
+          .map((v) => v.trim())
+          .filter(Boolean)
+          .join(", ");
+        const label = `Caso ${i + 1}/${exercise.testCases.length} (input: ${inputList || "sin input"})`;
 
         if (result.status === "network_error") {
           compiling[exerciseId] = false;
