@@ -415,13 +415,22 @@ export function useGameState() {
 
       compiling[exerciseId] = false;
       const before = level.value;
-      const xpGain = exercise.xpReward ?? 60;
+      // Misma afinidad de arma que las 7 misiones: si el docente/IA le puso
+      // un tipo real a este ejercicio (no "capitulo"), cambiar de arma acá
+      // también da bono de XP — es lo que hace que valga la pena cambiar de
+      // equipo dentro de un capítulo, no solo en la campaña fija.
+      const effectiveness = typeEffectiveness(exercise.topic);
+      const bugXpMultiplier = hasSkill("estudio-rapido") ? 1.15 : 1;
+      let bonus = Math.round((exercise.xpReward ?? 60) * bugXpMultiplier * effectiveness);
+      if (hasSkill("bonus-mision")) bonus = Math.round(bonus * 1.25);
+      const xpGain = bonus;
       state.xp += xpGain;
       es.completed = true;
-      pushLog(exerciseId, { type: "ok", text: `🏆 Capítulo completo. +${xpGain} XP.` });
+      const tag = effectiveness > 1 ? " ⚡ ¡Muy efectivo!" : "";
+      pushLog(exerciseId, { type: "ok", text: `🏆 Capítulo completo. +${xpGain} XP.${tag}` });
       sfxSolve();
       sfxComplete();
-      bus.emit("solved", { exerciseId, bugId: null, superEffective: false, xpGain, hinted: false });
+      bus.emit("solved", { exerciseId, bugId: null, superEffective: effectiveness > 1, xpGain, hinted: false });
       bus.emit("complete", { exerciseId });
       persist();
       if (levelFromXp(state.xp) > before) {

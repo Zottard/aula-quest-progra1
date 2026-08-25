@@ -373,11 +373,29 @@ PDF, sea cual sea su tamaño.
 4. **`composables/useChapters.ts`** (`fetchChaptersForAula`) — se llama desde `app.vue`
    al montar y cada vez que `state.aulaId` cambia (alumno recién registrado/logueado);
    trae los capítulos `published` del aula del alumno y los mapea a `Exercise[]` con
-   `topic: "capitulo"` (ver `data/modules.ts` — tipo neutral en el sistema de batalla,
-   ningún arma tiene afinidad especial) y un código inicial en blanco (a diferencia de
-   las 7 misiones, acá el alumno escribe el programa entero, no arregla uno roto).
+   un código inicial en blanco (a diferencia de las 7 misiones, acá el alumno escribe el
+   programa entero, no arregla uno roto).
 
-### 10.6 Env var
+### 10.6 Tipo de batalla por ejercicio (para que valga la pena cambiar de arma)
+Cada ejercicio de capítulo también recibe un `topic` real (`operadores` | `ciclos` |
+`vectores`, el mismo enum que usan las 7 misiones — ver `data/modules.ts`), no el
+`"capitulo"` neutral por defecto. La IA lo clasifica según qué hace falta para resolver
+el ejercicio (variables sueltas + cuentas → operadores; repetir algo → ciclos; guardar y
+recorrer una lista → vectores) como parte del mismo llamado que arma los casos de
+prueba — no hay un segundo llamado a la IA para esto. El docente puede corregir la
+clasificación en la pantalla de publicación (selector junto a cada ejercicio) antes de
+publicar.
+
+Con un `topic` real, la afinidad de arma (`typeEffectiveness()` en `useGameState.ts`, el
+mismo sistema tipo Pokémon de las 7 misiones) también aplica en los capítulos: si el arma
+equipada tiene afinidad con el tema del ejercicio, +50% XP y el toast "⚡ ¡Es muy
+efectivo!" — mismo código, cero lógica nueva. Esto es lo que fuerza al alumno a decidir
+si le conviene cambiar de arma **dentro de un mismo capítulo**, no solo entre módulos de
+la campaña fija. `"capitulo"` (gris, sin afinidad de ningún arma salvo Excálibur) queda
+solo como fallback defensivo si la IA devuelve algo inválido o un capítulo viejo no tiene
+el campo todavía (`normalizeTopic()` en `useChapters.ts`).
+
+### 10.7 Env var
 `DEEPSEEK_API_KEY` en `runtimeConfig` (NO `runtimeConfig.public` — a propósito, para que
 solo la lea el server). Se saca en https://platform.deepseek.com. Sin esta variable, el
 resto de la app funciona igual; el botón "Generar con IA" del panel docente falla con un

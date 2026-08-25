@@ -14,14 +14,26 @@
 // silencio, la IA arma un caso ella misma para esos casos puntuales, pero
 // marcado "computed": true — el docente lo revisa/corrige a mano en la
 // pantalla de publicación antes de que quede visible para los alumnos.
+//
+// Tipo de batalla ("topic"): la IA también clasifica cada ejercicio en
+// operadores/ciclos/vectores según qué hace falta para resolverlo, para que
+// la mecánica de afinidad de arma (ver typeEffectiveness() en useGameState.ts)
+// también aplique a los capítulos — si todos quedaran "neutros" no habría
+// ningún incentivo a cambiar de arma en un capítulo, que es justamente la
+// gracia del sistema tipo Pokémon.
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
 const MAX_INPUT_CHARS = 15000;
 
-const SYSTEM_PROMPT = `Sos un asistente que convierte guías de ejercicios de programación en C++ (cátedra de Programación 1, nivel introductorio: variables, cin/cout, operadores aritméticos, if simple) en ejercicios evaluables por un compilador real.
+const SYSTEM_PROMPT = `Sos un asistente que convierte guías de ejercicios de programación en C++ (cátedra de Programación 1, nivel introductorio: variables, cin/cout, operadores aritméticos, if simple) en ejercicios evaluables por un compilador real, para un juego con mecánica tipo Pokémon (cada ejercicio es un "enemigo" de un tipo, y ciertas armas son más efectivas contra ciertos tipos).
 
 Para CADA ejercicio del texto (todos, no solo los que traen ejemplo resuelto):
 - "title": título corto, ej "Ejercicio 3 · Sueldo del vendedor".
 - "briefing": la consigna para el alumno, en HTML simple (uno o dos <p>), clara. Mismo problema que el original, podés prolijar la redacción pero NO cambiarlo ni agregar datos que no estén.
+- "topic": el tipo de batalla, EXACTAMENTE uno de "operadores" | "ciclos" | "vectores", según qué hace falta para resolverlo:
+  - "operadores": alcanza con variables sueltas, cuentas aritméticas y como mucho un if — no hay que repetir nada ni guardar una lista de valores. Es el caso más común en guías introductorias (la gran mayoría de "ingresá X e Y, calculá Z" son esto).
+  - "ciclos": hace falta repetir algo un número de veces o hasta cumplir una condición (sumar/contar/acumular varios valores ingresados uno por uno, por ejemplo).
+  - "vectores": hace falta guardar y recorrer una lista de varios valores relacionados entre sí (un arreglo de notas, productos, etc.), no solo variables sueltas.
+  - Elegí el tipo que mejor represente la DIFICULTAD PRINCIPAL del ejercicio, no cualquier detalle menor.
 - "testCases": al menos un caso de prueba:
   - Si el ejercicio TRAE uno o más ejemplos ya resueltos en el texto (input -> resultado esperado), extraé cada uno TAL CUAL está escrito (no cambies los números) y marcá "computed": false.
   - Si el ejercicio NO trae ningún ejemplo resuelto en el texto, INVENTÁ vos un caso: elegí valores de entrada simples y redondos, aplicá con mucho cuidado la fórmula/regla exacta que describe el enunciado para calcular el resultado, y marcá "computed": true.
@@ -30,7 +42,7 @@ Para CADA ejercicio del texto (todos, no solo los que traen ejemplo resuelto):
 Reglas estrictas:
 - NO escribas el código de la solución.
 - Si el caso es "computed": true, la cuenta tiene que estar bien hecha — el docente puede confiar en el número si no lo corrige, así que verificala vos mismo antes de responder.
-- Devolvé SOLO este JSON, sin texto adicional: {"exercises":[{"title":"...","briefing":"...","testCases":[{"stdin":"...","expectedValues":["..."],"computed":false}]}]}`;
+- Devolvé SOLO este JSON, sin texto adicional: {"exercises":[{"title":"...","briefing":"...","topic":"operadores","testCases":[{"stdin":"...","expectedValues":["..."],"computed":false}]}]}`;
 
 interface DeepSeekChoice {
   message?: { content?: string };

@@ -1,6 +1,16 @@
 import { useSupabase, isSupabaseConfigured } from "~/composables/useSupabase";
 import { useGameState } from "~/composables/useGameState";
 import type { Exercise, TestCase } from "~/data/exercises";
+import type { Topic } from "~/data/modules";
+
+const BATTLE_TOPICS: readonly Topic[] = ["operadores", "ciclos", "vectores"];
+
+/** La IA a veces devuelve algo raro (o un capítulo viejo no tiene el campo
+ * todavía) — en ese caso cae a "capitulo" (neutral en el sistema de batalla)
+ * en vez de romper. */
+function normalizeTopic(topic: unknown): Topic {
+  return BATTLE_TOPICS.includes(topic as Topic) ? (topic as Topic) : "capitulo";
+}
 
 // Puente entre exercise_sets (Supabase) y los ejercicios "de capítulo" del
 // juego. Todo lo que toca al alumno acá es best-effort (nunca bloquea el
@@ -19,6 +29,10 @@ int main() {
 export interface GeneratedExercise {
   title: string;
   briefing: string;
+  /** operadores/ciclos/vectores — lo asigna la IA (o lo corrige el docente en
+   * la pantalla de publicación) para que la afinidad de arma también aplique
+   * a los capítulos, no solo a las 7 misiones fijas. */
+  topic: Topic;
   testCases: TestCase[];
 }
 
@@ -35,7 +49,10 @@ interface ExerciseSetRow {
   updated_at: string;
 }
 
-function mapRowToExercises(row: ExerciseSetRow): Exercise[] {
+/** Exportada para que pages/admin/aulas/[id]/index.vue pueda mostrar el
+ * desglose de capítulos de un alumno con la misma forma que usa el juego
+ * (no solo el docente que los generó). */
+export function mapRowToExercises(row: ExerciseSetRow): Exercise[] {
   return (row.generated_exercises ?? []).map((ge, i) => ({
     id: `ch-${row.id}-${i}`,
     title: ge.title,
@@ -47,7 +64,7 @@ function mapRowToExercises(row: ExerciseSetRow): Exercise[] {
     chapterId: row.id,
     chapterTitle: row.title,
     bugs: [],
-    topic: "capitulo" as const
+    topic: normalizeTopic(ge.topic)
   }));
 }
 

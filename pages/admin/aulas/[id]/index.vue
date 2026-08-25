@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { useSupabase } from "~/composables/useSupabase";
-import { EXERCISES } from "~/data/exercises";
+import { EXERCISES, type Exercise } from "~/data/exercises";
 import type { StudentRow } from "~/composables/useGameState";
+import { listChaptersForAula, mapRowToExercises } from "~/composables/useChapters";
 
 definePageMeta({ middleware: "admin-auth" });
 
@@ -35,6 +36,12 @@ const students = ref<StudentOverview[]>([]);
 const loading = ref(true);
 const notFound = ref(false);
 const errorMsg = ref("");
+
+// Capítulos publicados de esta aula, para poder mostrar el desglose de un
+// alumno completo (misiones fijas + capítulos) — antes el detalle expandido
+// solo recorría EXERCISES (las 7 misiones fijas) y un capítulo aprobado
+// desaparecía sin dejar rastro en el panel del docente.
+const chapterExercises = ref<Exercise[]>([]);
 
 const expandedId = ref<string | null>(null);
 const detailCache = ref<Record<string, StudentRow>>({});
@@ -88,6 +95,16 @@ async function loadAll() {
     return;
   }
   students.value = (studentsData as StudentOverview[]) ?? [];
+
+  try {
+    const rows = await listChaptersForAula(aulaId);
+    chapterExercises.value = rows.filter((r) => r.status === "published").flatMap(mapRowToExercises);
+  } catch (e: any) {
+    // No bloqueamos el roster si esto falla — el desglose de capítulos
+    // simplemente queda vacío, el resto de la página sigue andando.
+    console.warn("[admin] no se pudieron cargar los capítulos de la aula:", e?.message);
+  }
+
   loading.value = false;
 }
 
@@ -117,6 +134,10 @@ function exerciseStatus(detail: StudentRow, exerciseId: string) {
     solved: es?.solved ?? {},
     hinted: es?.hinted ?? {}
   };
+}
+
+function chaptersCompletedCount(detail: StudentRow): number {
+  return chapterExercises.value.filter((ex) => exerciseStatus(detail, ex.id).completed).length;
 }
 
 async function deleteStudent(s: StudentOverview) {
@@ -239,6 +260,21 @@ onMounted(loadAll);
                   </span>
                 </div>
               </div>
+
+              <template v-if="chapterExercises.length > 0">
+                <div class="chapters-heading">
+                  📘 Capítulos — {{ chaptersCompletedCount(detailCache[s.id]) }}/{{ chapterExercises.length }} completados
+                </div>
+                <div v-for="ex in chapterExercises" :key="ex.id" class="exercise-item">
+                  <div class="exercise-head">
+                    <span class="exercise-status" :class="{ done: exerciseStatus(detailCache[s.id], ex.id).completed }">
+                      {{ exerciseStatus(detailCache[s.id], ex.id).completed ? "✔" : "○" }}
+                    </span>
+                    <span class="exercise-title">{{ ex.title }}</span>
+                    <span class="exercise-chapter-tag">{{ ex.chapterTitle }}</span>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
         </template>
@@ -419,6 +455,21 @@ h1 {
 .exercise-item {
   border: 1px solid var(--border-dark);
   padding: 0.5rem 0.7rem;
+}
+.chapters-heading {
+  font-family: "VT323", monospace;
+  color: var(--cream-dim);
+  font-size: 1rem;
+  margin: 1rem 0 0.5rem;
+  padding-top: 0.7rem;
+  border-top: 1px dashed var(--border-dark);
+}
+.exercise-chapter-tag {
+  margin-left: auto;
+  font-family: "VT323", monospace;
+  font-size: 0.8rem;
+  color: var(--cream-dim);
+  opacity: 0.7;
 }
 .exercise-head {
   display: flex;

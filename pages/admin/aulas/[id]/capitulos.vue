@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { useTeacherAuth } from "~/composables/useTeacherAuth";
 import { extractPdfText } from "~/composables/usePdfExtract";
+import { MODULES } from "~/data/modules";
+import type { Topic } from "~/data/modules";
 import {
   generateChapterFromText,
   listChaptersForAula,
@@ -9,6 +11,8 @@ import {
   deleteChapter,
   type GeneratedExercise
 } from "~/composables/useChapters";
+
+const BATTLE_TOPICS = MODULES.filter((m) => m.id !== "capitulo");
 
 definePageMeta({ middleware: "admin-auth" });
 
@@ -224,8 +228,10 @@ onMounted(loadChapters);
     <section v-if="reviewExercises && reviewExercises.length > 0" class="review-box pxframe">
       <h2>3. Revisá y publicá</h2>
       <p class="hint">
-        Desmarcá los que no quieras incluir. Podés editar título, consigna y casos de prueba antes de publicar —
-        prestá especial atención a los marcados ⚠, esos los calculó la IA porque el enunciado no traía ejemplo.
+        Desmarcá los que no quieras incluir. Podés editar título, consigna, tipo de batalla y casos de prueba antes
+        de publicar — prestá especial atención a los marcados ⚠, esos los calculó la IA porque el enunciado no
+        traía ejemplo. El tipo (Operadores/Ciclos/Vectores) decide qué arma le da bono de XP al alumno en ese
+        ejercicio, igual que en las 7 misiones — la IA lo asigna, pero podés corregirlo si no te cierra.
       </p>
 
       <div v-for="(ex, i) in reviewExercises" :key="i" class="review-item" :class="{ off: !ex.selected }">
@@ -234,6 +240,9 @@ onMounted(loadChapters);
             <input v-model="ex.selected" type="checkbox" />
             <input v-model="ex.title" type="text" class="title-input" />
           </label>
+          <select v-model="ex.topic" class="topic-select" :style="{ color: (MODULES.find((m) => m.id === ex.topic) ?? MODULES[0]).color }">
+            <option v-for="m in BATTLE_TOPICS" :key="m.id" :value="m.id">{{ m.short }}</option>
+          </select>
           <span class="case-count">{{ ex.testCases.length }} caso{{ ex.testCases.length > 1 ? "s" : "" }}</span>
         </div>
         <textarea v-model="ex.briefing" class="briefing-input" rows="2" />
@@ -482,6 +491,14 @@ input[type="file"] {
   color: var(--cream-dim);
   font-size: 0.85rem;
   white-space: nowrap;
+}
+.topic-select {
+  background: #0a0810;
+  border: 1px solid var(--border-light);
+  font-family: "VT323", monospace;
+  font-size: 0.9rem;
+  padding: 0.2rem 0.4rem;
+  flex: none;
 }
 .briefing-input {
   width: 100%;

@@ -73,8 +73,8 @@ const chapterGroups = computed(() => {
           :tapped="{ scale: 0.92 }"
           class="quest-tab"
           :class="{ active: ex.id === state.activeId, done: exState(ex.id).completed }"
-          style="--tab-color: #b0a8c2"
-          :title="ex.title"
+          :style="{ '--tab-color': moduleFor(ex.topic).color }"
+          :title="`${ex.title} — ${moduleFor(ex.topic).short}`"
           @click="setActive(ex.id)"
         >
           C{{ i + 1 }}
