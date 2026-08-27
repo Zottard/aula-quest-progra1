@@ -39,6 +39,11 @@ interface GameState {
   studentId: string | null;
   aulaId: string | null;
   username: string | null;
+  /** Material de teoría ya leído (capítulos kind:"theory"), por id de
+   * exercise_sets. Se guarda aparte de `exercises` porque no es un ejercicio:
+   * no da XP de combate ni cuenta como misión, pero sí es lo que le permite
+   * al docente ver quién llegó preparado a la clase. */
+  theoryDone: Record<string, { at: string; score: number; total: number }>;
 }
 
 /** Fila de la tabla `students` tal como la devuelven register_student /
@@ -55,6 +60,7 @@ export interface StudentRow {
     exercises: Record<string, ExerciseState>;
     equipment: Equipment;
     unlockedSkills: string[];
+    theoryDone: Record<string, { at: string; score: number; total: number }>;
   }> | null;
   xp: number;
   level: number;
@@ -79,7 +85,8 @@ function defaultState(): GameState {
     avatarName: "",
     studentId: null,
     aulaId: null,
-    username: null
+    username: null,
+    theoryDone: {}
   };
 }
 
@@ -198,6 +205,16 @@ export function useGameState() {
    * Supabase (registro o claim exitoso). Ver useProgressSync.ts. */
   const isLinkedToAula = computed(() => !!state.studentId);
 
+  /* ================= MATERIAL DE TEORÍA (lectura previa) ================= */
+  function markTheoryDone(chapterId: string, score: number, total: number) {
+    state.theoryDone[chapterId] = { at: new Date().toISOString(), score, total };
+    persist();
+    bus.emit("theoryDone", { chapterId, score, total });
+  }
+  function isTheoryDone(chapterId: string): boolean {
+    return !!state.theoryDone?.[chapterId];
+  }
+
   /** Aplica los datos que devuelve register_student/claim_student_by_username.
    * `hydrateFromRemote` en true pisa el progreso local con el de la base
    * (caso "ya tengo usuario" en un dispositivo nuevo); en false deja el
@@ -215,6 +232,7 @@ export function useGameState() {
       if (gs.exercises && typeof gs.exercises === "object") state.exercises = gs.exercises;
       if (gs.equipment && typeof gs.equipment === "object") state.equipment = { ...state.equipment, ...gs.equipment };
       if (Array.isArray(gs.unlockedSkills)) state.unlockedSkills = gs.unlockedSkills;
+      if (gs.theoryDone && typeof gs.theoryDone === "object") state.theoryDone = gs.theoryDone;
     }
     persist();
   }
@@ -387,14 +405,14 @@ export function useGameState() {
           compiling[exerciseId] = false;
           pushLog(exerciseId, { type: "err", text: `✖ ${label}: tu programa no terminó a tiempo.` });
           sfxWrong();
-          bus.emit("wrong", { exerciseId });
+          bus.emit("wrong", { exerciseId, reason: "timeout" });
           return;
         }
         if (result.status === "compile_error") {
           compiling[exerciseId] = false;
           pushLog(exerciseId, { type: "err", text: `✖ Error de compilación:\n${result.compileError}` });
           sfxWrong();
-          bus.emit("wrong", { exerciseId });
+          bus.emit("wrong", { exerciseId, reason: "compile_error" });
           return;
         }
         if (result.status === "runtime_error") {
@@ -404,7 +422,7 @@ export function useGameState() {
             text: `✖ ${label}: compiló pero falló al correr:\n${result.stderr || "(sin mensaje)"}`
           });
           sfxWrong();
-          bus.emit("wrong", { exerciseId });
+          bus.emit("wrong", { exerciseId, reason: "runtime_error" });
           return;
         }
 
@@ -416,7 +434,7 @@ export function useGameState() {
             text: `✖ ${label}: no encontré ${missing.join(", ")} en la salida de tu programa.\nSalida:\n${result.stdout || "(sin salida)"}`
           });
           sfxWrong();
-          bus.emit("wrong", { exerciseId });
+          bus.emit("wrong", { exerciseId, reason: "wrong_output" });
           return;
         }
 
@@ -466,13 +484,13 @@ export function useGameState() {
         text: "⏱ Tu programa no terminó a tiempo (¿un bucle que no corta nunca?)."
       });
       sfxWrong();
-      bus.emit("wrong", { exerciseId });
+      bus.emit("wrong", { exerciseId, reason: "timeout" });
       return;
     }
     if (result.status === "compile_error") {
       pushLog(exerciseId, { type: "err", text: `✖ Error de compilación:\n${result.compileError}` });
       sfxWrong();
-      bus.emit("wrong", { exerciseId });
+      bus.emit("wrong", { exerciseId, reason: "compile_error" });
       return;
     }
     if (result.status === "runtime_error") {
@@ -481,7 +499,7 @@ export function useGameState() {
         text: `✖ Compiló, pero falló al correr:\n${result.stderr || "(sin mensaje)"}`
       });
       sfxWrong();
-      bus.emit("wrong", { exerciseId });
+      bus.emit("wrong", { exerciseId, reason: "runtime_error" });
       return;
     }
 
@@ -494,7 +512,7 @@ export function useGameState() {
         text: `✖ Compiló y corrió, pero el resultado no es el esperado.\nSalida de tu programa:\n${result.stdout || "(sin salida)"}`
       });
       sfxWrong();
-      bus.emit("wrong", { exerciseId });
+      bus.emit("wrong", { exerciseId, reason: "wrong_output" });
       return;
     }
 
@@ -600,6 +618,9 @@ export function useGameState() {
     setNames,
     isLinkedToAula,
     setIdentityFromStudent,
+    // material de teoría
+    markTheoryDone,
+    isTheoryDone,
     // habilidades
     SKILLS,
     hasSkill,

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { EXERCISES } from "~/data/exercises";
 import { useGameState } from "~/composables/useGameState";
+import { askForHelp } from "~/composables/useStudentQuestions";
 
-const { state, exState, saveCode, checkCode, compiling, resetCode, useHint, findExercise } = useGameState();
+const { state, exState, saveCode, checkCode, compiling, resetCode, useHint, findExercise, isLinkedToAula } =
+  useGameState();
 
 // Fallback a la misión 1: si activeId apunta a un ejercicio de capítulo y la
 // página recién recargó, chapterExercises todavía puede estar vacío (se
@@ -65,6 +67,38 @@ function handleReset() {
 function handleHint(bugId: string) {
   useHint(exercise.value.id, bugId);
 }
+
+/* ---------------- "estoy trabado": deja la duda para el docente ---------------- */
+const askOpen = ref(false);
+const askMessage = ref("");
+const asking = ref(false);
+const askError = ref("");
+const askSent = ref(false);
+const canAsk = computed(() => isLinkedToAula.value);
+
+async function sendHelp() {
+  if (!askMessage.value.trim() || asking.value) return;
+  asking.value = true;
+  askError.value = "";
+  try {
+    await askForHelp({
+      exerciseId: exercise.value.id,
+      exerciseTitle: exercise.value.title,
+      message: askMessage.value,
+      code: code.value
+    });
+    askSent.value = true;
+    askMessage.value = "";
+    setTimeout(() => {
+      askOpen.value = false;
+      askSent.value = false;
+    }, 2200);
+  } catch (e: any) {
+    askError.value = e?.message ?? "No se pudo enviar la consulta.";
+  } finally {
+    asking.value = false;
+  }
+}
 </script>
 
 <template>
@@ -121,6 +155,25 @@ function handleHint(bugId: string) {
         <button v-motion :hovered="{ scale: 1.06 }" :tapped="{ scale: 0.9 }" class="btn ghost" @click="handleReset">
           ↺ REINICIAR
         </button>
+        <button v-if="canAsk" class="btn ghost help" @click="askOpen = !askOpen">🙋 ESTOY TRABADO</button>
+      </div>
+
+      <div v-if="askOpen" class="ask-box">
+        <p v-if="askSent" class="ask-sent">✔ Listo, tu docente va a ver tu consulta con el código que escribiste.</p>
+        <template v-else>
+          <label class="ask-label">Contale a tu docente qué no te sale (se manda junto con tu código actual)</label>
+          <textarea
+            v-model="askMessage"
+            class="ask-input"
+            rows="3"
+            maxlength="1000"
+            placeholder="Ej: no entiendo por qué me da 0 el promedio…"
+          />
+          <div v-if="askError" class="ask-error">{{ askError }}</div>
+          <button class="btn small" :disabled="!askMessage.trim() || asking" @click="sendHelp">
+            {{ asking ? "Enviando…" : "Enviar consulta" }}
+          </button>
+        </template>
       </div>
 
       <BugList v-if="!isChapter" :exercise="exercise" :ex-state="es" :just-completed="justCompleted" @hint="handleHint" />
@@ -250,5 +303,52 @@ function handleHint(bugId: string) {
 .btn:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+.btn.help {
+  color: var(--cyan);
+  outline-color: var(--cyan);
+}
+.btn.small {
+  font-size: 0.6rem;
+  padding: 0.5rem 0.8rem;
+  margin-top: 0.5rem;
+}
+.ask-box {
+  margin-top: 0.8rem;
+  background: #0a0810;
+  border: 2px solid var(--border-dark);
+  outline: 1px solid var(--cyan);
+  outline-offset: -2px;
+  padding: 0.8rem 0.9rem;
+}
+.ask-label {
+  display: block;
+  font-family: "VT323", monospace;
+  color: var(--cream-dim);
+  font-size: 0.95rem;
+  margin-bottom: 0.35rem;
+}
+.ask-input {
+  width: 100%;
+  background: #14101c;
+  border: 1px solid var(--border-dark);
+  color: var(--cream);
+  font-family: "VT323", monospace;
+  font-size: 1.02rem;
+  padding: 0.45rem 0.55rem;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.ask-error {
+  font-family: "VT323", monospace;
+  color: var(--magenta);
+  font-size: 0.92rem;
+  margin-top: 0.35rem;
+}
+.ask-sent {
+  font-family: "VT323", monospace;
+  color: var(--cyan);
+  font-size: 1.02rem;
+  margin: 0;
 }
 </style>

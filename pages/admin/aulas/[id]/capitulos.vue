@@ -5,11 +5,15 @@ import { MODULES } from "~/data/modules";
 import type { Topic } from "~/data/modules";
 import {
   generateChapterFromText,
+  generateTheoryFromText,
   listChaptersForAula,
   publishChapter,
+  publishTheory,
   setChapterStatus,
   deleteChapter,
-  type GeneratedExercise
+  type GeneratedExercise,
+  type TheorySection,
+  type TheoryCheck
 } from "~/composables/useChapters";
 
 const BATTLE_TOPICS = MODULES.filter((m) => m.id !== "capitulo");
@@ -24,9 +28,17 @@ interface ChapterRow {
   id: string;
   title: string;
   status: "draft" | "published" | "archived";
+  kind: "exercises" | "theory";
   generated_exercises: GeneratedExercise[];
+  content: { sections?: TheorySection[]; checks?: TheoryCheck[] };
+  due_at: string | null;
   created_at: string;
 }
+
+/** Los dos flujos conviven: el mismo PDF-a-capítulo pero con distinto
+ * destino. "exercises" genera ejercicios evaluables por el compilador;
+ * "theory" genera el material de lectura previa + preguntas de comprensión. */
+const mode = ref<"exercises" | "theory">("exercises");
 
 const route = useRoute();
 const aulaId = route.params.id as string;
@@ -52,6 +64,14 @@ const chapterTitle = ref("");
 const publishing = ref(false);
 const publishError = ref("");
 
+// Fecha límite opcional (feature D): sin fecha no hay forma de responder
+// "¿quién llegó preparado a la clase del martes?", que es el problema #1
+// del aula invertida según la investigación.
+const dueAt = ref("");
+
+// Revisión del material de teoría (modo "theory").
+const reviewTheory = ref<{ sections: TheorySection[]; checks: TheoryCheck[] } | null>(null);
+
 async function loadChapters() {
   loadingChapters.value = true;
   listError.value = "";
@@ -70,6 +90,7 @@ async function handleFilePicked(e: Event) {
   if (!file) return;
 
   reviewExercises.value = null;
+  reviewTheory.value = null;
   genError.value = "";
   extractError.value = "";
   fileName.value = file.name;
@@ -91,7 +112,18 @@ async function handleGenerate() {
   generating.value = true;
   genError.value = "";
   reviewExercises.value = null;
+  reviewTheory.value = null;
   try {
+    if (mode.value === "theory") {
+      const { title, sections, checks, truncated } = await generateTheoryFromText(extractedText.value);
+      truncatedWarning.value = truncated;
+      cappedWarning.value = false;
+      reviewTheory.value = { sections, checks };
+      if (title && !chapterTitle.value.trim()) chapterTitle.value = title;
+      if (sections.length === 0) genError.value = "La IA no pudo armar material de lectura con este texto.";
+      return;
+    }
+
     const { exercises, truncated, capped } = await generateChapterFromText(extractedText.value);
     truncatedWarning.value = truncated;
     cappedWarning.value = capped;
@@ -103,6 +135,38 @@ async function handleGenerate() {
     genError.value = e?.message ?? "Falló la generación.";
   } finally {
     generating.value = false;
+  }
+}
+
+async function handlePublishTheory() {
+  if (!reviewTheory.value || publishing.value) return;
+  const teacher = await currentTeacher();
+  if (!teacher) {
+    publishError.value = "No se pudo confirmar tu sesión docente.";
+    return;
+  }
+  publishing.value = true;
+  publishError.value = "";
+  try {
+    await publishTheory({
+      aulaId,
+      teacherId: teacher.id,
+      title: chapterTitle.value.trim() || "Material sin título",
+      sourcePdfName: fileName.value || undefined,
+      content: { sections: reviewTheory.value.sections, checks: reviewTheory.value.checks },
+      dueAt: dueAt.value ? new Date(dueAt.value).toISOString() : null
+    });
+    reviewTheory.value = null;
+    extractedText.value = "";
+    fileName.value = "";
+    chapterTitle.value = "";
+    dueAt.value = "";
+    if (fileInputRef.value) fileInputRef.value.value = "";
+    await loadChapters();
+  } catch (e: any) {
+    publishError.value = e?.message ?? "No se pudo publicar el material.";
+  } finally {
+    publishing.value = false;
   }
 }
 
@@ -139,13 +203,15 @@ async function handlePublish() {
       teacherId: teacher.id,
       title: chapterTitle.value.trim() || "Capítulo sin título",
       sourcePdfName: fileName.value || undefined,
-      exercises: toPublish
+      exercises: toPublish,
+      dueAt: dueAt.value ? new Date(dueAt.value).toISOString() : null
     });
     // reset del flujo de carga
     reviewExercises.value = null;
     extractedText.value = "";
     fileName.value = "";
     chapterTitle.value = "";
+    dueAt.value = "";
     if (fileInputRef.value) fileInputRef.value.value = "";
     await loadChapters();
   } catch (e: any) {
@@ -202,6 +268,20 @@ onMounted(loadChapters);
     </header>
 
     <section class="upload-box pxframe">
+      <div class="mode-row">
+        <button class="mode-btn" :class="{ on: mode === 'exercises' }" @click="mode = 'exercises'">
+          🎮 Ejercicios
+        </button>
+        <button class="mode-btn" :class="{ on: mode === 'theory' }" @click="mode = 'theory'">📖 Teoría</button>
+      </div>
+      <p class="hint mode-hint">
+        {{
+          mode === "exercises"
+            ? "Genera ejercicios que se corrigen solos con el compilador real."
+            : "Genera el material de lectura previa + preguntas de comprensión. No se compila nada: es lo que leen ANTES de la clase."
+        }}
+      </p>
+
       <label class="field">
         <span>1. Elegí el PDF</span>
         <input ref="fileInputRef" type="file" accept="application/pdf" @change="handleFilePicked" />
@@ -229,6 +309,50 @@ onMounted(loadChapters);
         ⚠ La guía trae más de 10 ejercicios — se generaron solo los primeros 10. Subí el
         resto en un capítulo aparte si querés incluirlos.
       </p>
+    </section>
+
+    <section v-if="reviewTheory" class="review-box pxframe">
+      <h2>3. Revisá el material y publicalo</h2>
+      <p class="hint">
+        Esto es lo que van a leer antes de la clase. Podés editar cualquier texto acá mismo — sale de tu apunte, pero
+        la redacción la hizo la IA.
+      </p>
+
+      <div v-for="(sec, i) in reviewTheory.sections" :key="'s' + i" class="review-item">
+        <input v-model="sec.heading" type="text" class="title-input" />
+        <textarea v-model="sec.body" class="briefing-input" rows="4" />
+      </div>
+
+      <template v-if="reviewTheory.checks.length">
+        <h3 class="checks-heading">Preguntas de comprensión</h3>
+        <div v-for="(chk, i) in reviewTheory.checks" :key="'c' + i" class="review-item">
+          <input v-model="chk.question" type="text" class="title-input" />
+          <div v-for="(opt, j) in chk.options" :key="j" class="option-row">
+            <input
+              type="radio"
+              :name="`correct-${i}`"
+              :checked="chk.correctIndex === j"
+              @change="chk.correctIndex = j"
+            />
+            <input v-model="chk.options[j]" type="text" class="option-input" />
+          </div>
+          <p class="hint tiny">El punto marcado es la respuesta correcta.</p>
+        </div>
+      </template>
+
+      <label class="field">
+        <span>Título del material</span>
+        <input v-model="chapterTitle" type="text" maxlength="80" placeholder="Ej: Operadores en C++" />
+      </label>
+      <label class="field">
+        <span>Fecha límite (opcional) — para saber quién llegó preparado</span>
+        <input v-model="dueAt" type="datetime-local" />
+      </label>
+
+      <div v-if="publishError" class="error-box">{{ publishError }}</div>
+      <button class="btn" :disabled="publishing" @click="handlePublishTheory">
+        {{ publishing ? "Publicando…" : "Publicar material en esta aula" }}
+      </button>
     </section>
 
     <section v-if="reviewExercises && reviewExercises.length > 0" class="review-box pxframe">
@@ -280,6 +404,10 @@ onMounted(loadChapters);
         <span>Título del capítulo</span>
         <input v-model="chapterTitle" type="text" maxlength="80" placeholder="Ej: Guía de ejercicios N°1" />
       </label>
+      <label class="field">
+        <span>Fecha límite (opcional) — para saber quién llegó preparado</span>
+        <input v-model="dueAt" type="datetime-local" />
+      </label>
 
       <div v-if="publishError" class="error-box">{{ publishError }}</div>
 
@@ -296,10 +424,18 @@ onMounted(loadChapters);
 
       <div v-else class="chapters-grid">
         <div v-for="ch in chapters" :key="ch.id" class="chapter-card pxframe" :class="ch.status">
-          <div class="chapter-title">{{ ch.title }}</div>
-          <div class="chapter-meta">
-            {{ ch.generated_exercises?.length ?? 0 }} ejercicio(s) · {{ formatDate(ch.created_at) }}
+          <div class="chapter-title">
+            <span class="kind-badge" :class="ch.kind">{{ ch.kind === "theory" ? "📖" : "🎮" }}</span>
+            {{ ch.title }}
           </div>
+          <div class="chapter-meta">
+            <template v-if="ch.kind === 'theory'">
+              {{ ch.content?.sections?.length ?? 0 }} sección(es) · {{ ch.content?.checks?.length ?? 0 }} pregunta(s)
+            </template>
+            <template v-else>{{ ch.generated_exercises?.length ?? 0 }} ejercicio(s)</template>
+            · {{ formatDate(ch.created_at) }}
+          </div>
+          <div v-if="ch.due_at" class="chapter-due">⏰ para el {{ formatDate(ch.due_at) }}</div>
           <div class="chapter-status">{{ ch.status }}</div>
           <div class="chapter-actions">
             <button class="btn ghost small" @click="toggleStatus(ch)">
@@ -505,6 +641,75 @@ input[type="file"] {
   font-size: 0.9rem;
   padding: 0.2rem 0.4rem;
   flex: none;
+}
+.mode-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.mode-btn {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.62rem;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  background: var(--bg-panel);
+  border: 2px solid var(--border-dark);
+  outline: 2px solid var(--border-light);
+  outline-offset: -4px;
+  color: var(--cream-dim);
+}
+.mode-btn.on {
+  background: var(--amber);
+  color: #1a1509;
+  outline-color: var(--amber);
+  font-weight: 700;
+}
+.mode-hint {
+  margin: 0 0 1rem;
+}
+.hint.tiny {
+  font-size: 0.85rem;
+  margin: 0.3rem 0 0;
+}
+.checks-heading {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.7rem;
+  color: var(--cyan);
+  margin: 1.2rem 0 0.6rem;
+}
+.option-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.3rem;
+}
+.option-input {
+  flex: 1;
+  background: #0a0810;
+  border: 1px solid var(--border-dark);
+  color: var(--cream-dim);
+  font-family: "VT323", monospace;
+  font-size: 0.95rem;
+  padding: 0.3rem 0.5rem;
+}
+.field input[type="datetime-local"] {
+  background: #0a0810;
+  border: 2px solid var(--border-dark);
+  outline: 1px solid var(--border-light);
+  outline-offset: -2px;
+  color: var(--cream);
+  font-family: "VT323", monospace;
+  font-size: 1.05rem;
+  padding: 0.5rem 0.6rem;
+}
+.kind-badge {
+  margin-right: 0.25rem;
+}
+.chapter-due {
+  font-family: "VT323", monospace;
+  font-size: 0.9rem;
+  color: var(--amber);
+  margin-bottom: 0.4rem;
 }
 .briefing-input {
   width: 100%;

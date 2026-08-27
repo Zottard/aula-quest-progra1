@@ -145,6 +145,65 @@ function chaptersCompletedCount(detail: StudentRow): number {
   return chapterExercises.value.filter((ex) => exerciseStatus(detail, ex.id).completed).length;
 }
 
+// El código real que escribió el alumno ya se venía sincronizando dentro de
+// game_state.exercises[id].savedCode — simplemente nunca se mostraba. Poder
+// leerlo es la diferencia entre "Juan va 3/7" y "Juan puso `=` en vez de `==`
+// tres veces seguidas", que es lo que sirve para ayudarlo o para proyectarlo
+// en clase como ejemplo.
+const openCode = ref<Record<string, boolean>>({});
+function codeKey(studentId: string, exerciseId: string) {
+  return `${studentId}::${exerciseId}`;
+}
+function toggleCode(studentId: string, exerciseId: string) {
+  const k = codeKey(studentId, exerciseId);
+  openCode.value[k] = !openCode.value[k];
+}
+function codeOf(detail: StudentRow, exerciseId: string): string {
+  return detail.game_state?.exercises?.[exerciseId]?.savedCode ?? "";
+}
+
+async function copyCodeToClipboard(code: string) {
+  try {
+    await navigator.clipboard.writeText(code);
+  } catch {
+    // no crítico
+  }
+}
+
+/** Exportar a CSV para volcar las notas al sistema de la facultad — el
+ * docente no va a copiar 30 filas a mano desde la pantalla. */
+function csvCell(v: unknown): string {
+  const s = String(v ?? "");
+  return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function exportCsv() {
+  const header = ["Nombre", "Usuario", "Personaje", "Nivel", "XP", "Completados", "Total", "Ultima conexion"];
+  const rows = students.value.map((s) => [
+    s.real_name,
+    s.username,
+    s.character_name,
+    s.level,
+    s.xp,
+    s.quests_done,
+    TOTAL_MISIONES.value,
+    formatDate(s.last_seen_at)
+  ]);
+  // Separador ";" y BOM: es lo que hace que Excel en español abra el archivo
+  // en columnas y con los acentos bien, en vez de todo en una sola celda.
+  const csv = "﻿" + [header, ...rows].map((r) => r.map(csvCell).join(";")).join("\r\n");
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${(aula.value?.name ?? "aula").replace(/[^\w\-]+/g, "_")}-notas.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 async function deleteStudent(s: StudentOverview) {
   if (deletingId.value) return;
   const ok = confirm(`¿Borrar a ${s.real_name} (${s.username})? Esto elimina todo su progreso y no se puede deshacer.`);
@@ -192,7 +251,9 @@ onMounted(loadAll);
           <h1>{{ aula?.name }}</h1>
         </div>
         <div class="header-actions">
+          <NuxtLink :to="`/admin/aulas/${aulaId}/clase`" class="btn">🔥 Antes de la clase</NuxtLink>
           <NuxtLink :to="`/admin/aulas/${aulaId}/capitulos`" class="btn ghost">📘 Capítulos</NuxtLink>
+          <button v-if="students.length" class="btn ghost" @click="exportCsv">⬇ CSV</button>
           <div class="join-code-row" @click="copyCode">
             <span class="join-code-label">código:</span>
             <span class="join-code">{{ aula?.join_code }}</span>
@@ -249,6 +310,13 @@ onMounted(loadAll);
                     {{ exerciseStatus(detailCache[s.id], ex.id).completed ? "✔" : "○" }}
                   </span>
                   <span class="exercise-title">{{ ex.title }}</span>
+                  <button
+                    v-if="codeOf(detailCache[s.id], ex.id)"
+                    class="code-toggle"
+                    @click.stop="toggleCode(s.id, ex.id)"
+                  >
+                    {{ openCode[codeKey(s.id, ex.id)] ? "ocultar código" : "ver código" }}
+                  </button>
                 </div>
                 <div class="bug-list">
                   <span
@@ -264,6 +332,12 @@ onMounted(loadAll);
                     <template v-if="exerciseStatus(detailCache[s.id], ex.id).hinted[bug.id]"> (con pista)</template>
                   </span>
                 </div>
+                <div v-if="openCode[codeKey(s.id, ex.id)]" class="code-view">
+                  <button class="copy-btn" @click.stop="copyCodeToClipboard(codeOf(detailCache[s.id], ex.id))">
+                    copiar
+                  </button>
+                  <pre>{{ codeOf(detailCache[s.id], ex.id) }}</pre>
+                </div>
               </div>
 
               <template v-if="chapterExercises.length > 0">
@@ -277,6 +351,19 @@ onMounted(loadAll);
                     </span>
                     <span class="exercise-title">{{ ex.title }}</span>
                     <span class="exercise-chapter-tag">{{ ex.chapterTitle }}</span>
+                    <button
+                      v-if="codeOf(detailCache[s.id], ex.id)"
+                      class="code-toggle"
+                      @click.stop="toggleCode(s.id, ex.id)"
+                    >
+                      {{ openCode[codeKey(s.id, ex.id)] ? "ocultar código" : "ver código" }}
+                    </button>
+                  </div>
+                  <div v-if="openCode[codeKey(s.id, ex.id)]" class="code-view">
+                    <button class="copy-btn" @click.stop="copyCodeToClipboard(codeOf(detailCache[s.id], ex.id))">
+                      copiar
+                    </button>
+                    <pre>{{ codeOf(detailCache[s.id], ex.id) }}</pre>
                   </div>
                 </div>
               </template>
@@ -475,6 +562,57 @@ h1 {
   font-size: 0.8rem;
   color: var(--cream-dim);
   opacity: 0.7;
+}
+.code-toggle {
+  margin-left: auto;
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--cyan);
+  font-family: "VT323", monospace;
+  font-size: 0.85rem;
+  padding: 0.1rem 0.45rem;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: none;
+}
+.exercise-chapter-tag + .code-toggle {
+  margin-left: 0.5rem;
+}
+.code-toggle:hover {
+  border-color: var(--cyan);
+}
+.code-view {
+  position: relative;
+  margin-top: 0.5rem;
+  background: #08060c;
+  border: 1px solid var(--border-dark);
+  outline: 1px solid var(--border-light);
+  outline-offset: -2px;
+}
+.code-view pre {
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--cream);
+  white-space: pre;
+  overflow-x: auto;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.copy-btn {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-light);
+  color: var(--cream-dim);
+  font-family: "VT323", monospace;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.4rem;
+  cursor: pointer;
+  z-index: 1;
 }
 .exercise-head {
   display: flex;

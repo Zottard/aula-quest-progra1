@@ -1,3 +1,4 @@
+import { reactive } from "vue";
 import { useSupabase, isSupabaseConfigured } from "~/composables/useSupabase";
 import { useGameState } from "~/composables/useGameState";
 import type { Exercise, TestCase } from "~/data/exercises";
@@ -36,7 +37,24 @@ export interface GeneratedExercise {
   testCases: TestCase[];
 }
 
-interface ExerciseSetRow {
+/** Una sección de teoría + sus preguntas de comprensión (capítulos kind:"theory",
+ * ver server/api/generate-theory.post.ts). Los capítulos de ejercicios NO usan
+ * esto — siguen con generated_exercises, son dos flujos separados a propósito. */
+export interface TheorySection {
+  heading: string;
+  body: string;
+}
+export interface TheoryCheck {
+  question: string;
+  options: string[];
+  correctIndex: number;
+}
+export interface TheoryContent {
+  sections?: TheorySection[];
+  checks?: TheoryCheck[];
+}
+
+export interface ExerciseSetRow {
   id: string;
   aula_id: string;
   teacher_id: string;
@@ -44,7 +62,12 @@ interface ExerciseSetRow {
   topic: string | null;
   source_pdf_name: string | null;
   status: "draft" | "published" | "archived";
+  /** "exercises" (el generador original) | "theory" (material previo de lectura). */
+  kind: "exercises" | "theory";
   generated_exercises: GeneratedExercise[];
+  content: TheoryContent;
+  /** Fecha límite para tenerlo hecho antes de la clase (opcional). */
+  due_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -68,8 +91,17 @@ export function mapRowToExercises(row: ExerciseSetRow): Exercise[] {
   }));
 }
 
+/** Material de teoría publicado del aula del alumno (capítulos kind:"theory").
+ * Se guarda aparte de los ejercicios porque no se juega: se lee antes de la
+ * clase. Lo consume TheoryPanel.vue. */
+const theoryChapters = reactive<ExerciseSetRow[]>([]);
+export function useTheoryChapters() {
+  return theoryChapters;
+}
+
 /** Se llama una vez por sesión (desde app.vue) para cargar los capítulos
- * publicados del aula del alumno, si tiene una ligada. */
+ * publicados del aula del alumno, si tiene una ligada. Separa los de
+ * ejercicios (jugables) de los de teoría (lectura previa). */
 export async function fetchChaptersForAula() {
   const { state, setChapterExercises } = useGameState();
   if (!isSupabaseConfigured() || !state.aulaId) return;
@@ -86,8 +118,9 @@ export async function fetchChaptersForAula() {
     return;
   }
 
-  const all = ((data as ExerciseSetRow[]) ?? []).flatMap(mapRowToExercises);
-  setChapterExercises(all);
+  const rows = (data as ExerciseSetRow[]) ?? [];
+  setChapterExercises(rows.filter((r) => r.kind !== "theory").flatMap(mapRowToExercises));
+  theoryChapters.splice(0, theoryChapters.length, ...rows.filter((r) => r.kind === "theory"));
 }
 
 /** Manda el texto ya extraído del PDF (ver usePdfExtract.ts) al endpoint
@@ -121,12 +154,34 @@ export async function listChaptersForAula(aulaId: string): Promise<ExerciseSetRo
   return (data as ExerciseSetRow[]) ?? [];
 }
 
+/** Igual que generateChapterFromText pero para material de TEORÍA (endpoint
+ * distinto, prompt distinto). Los dos flujos conviven: un aula puede tener
+ * capítulos de lectura y capítulos de ejercicios al mismo tiempo. */
+export async function generateTheoryFromText(text: string): Promise<{
+  title: string;
+  sections: TheorySection[];
+  checks: TheoryCheck[];
+  truncated: boolean;
+}> {
+  const res = await fetch("/api/generate-theory", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text })
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.statusMessage ?? `Error ${res.status} generando la teoría.`);
+  }
+  return res.json();
+}
+
 export async function publishChapter(params: {
   aulaId: string;
   teacherId: string;
   title: string;
   sourcePdfName?: string;
   exercises: GeneratedExercise[];
+  dueAt?: string | null;
 }): Promise<ExerciseSetRow> {
   const supabase = useSupabase();
   const { data, error } = await supabase
@@ -137,7 +192,36 @@ export async function publishChapter(params: {
       title: params.title,
       source_pdf_name: params.sourcePdfName ?? null,
       status: "published",
-      generated_exercises: params.exercises
+      kind: "exercises",
+      generated_exercises: params.exercises,
+      due_at: params.dueAt || null
+    })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data as ExerciseSetRow;
+}
+
+export async function publishTheory(params: {
+  aulaId: string;
+  teacherId: string;
+  title: string;
+  sourcePdfName?: string;
+  content: TheoryContent;
+  dueAt?: string | null;
+}): Promise<ExerciseSetRow> {
+  const supabase = useSupabase();
+  const { data, error } = await supabase
+    .from("exercise_sets")
+    .insert({
+      teacher_id: params.teacherId,
+      aula_id: params.aulaId,
+      title: params.title,
+      source_pdf_name: params.sourcePdfName ?? null,
+      status: "published",
+      kind: "theory",
+      content: params.content,
+      due_at: params.dueAt || null
     })
     .select()
     .single();
@@ -148,6 +232,22 @@ export async function publishChapter(params: {
 export async function setChapterStatus(id: string, status: "draft" | "published" | "archived") {
   const supabase = useSupabase();
   const { error } = await supabase.from("exercise_sets").update({ status }).eq("id", id);
+  if (error) throw new Error(error.message);
+}
+
+/** Editar un capítulo YA publicado (feature F). Antes, si la IA se mandaba
+ * una macana en un caso de prueba, la única salida era borrar y regenerar —
+ * pagando otra vez la llamada a DeepSeek y perdiendo el progreso que los
+ * alumnos ya tenían en ese capítulo. */
+export async function updateChapter(
+  id: string,
+  patch: Partial<Pick<ExerciseSetRow, "title" | "generated_exercises" | "content" | "due_at">>
+) {
+  const supabase = useSupabase();
+  const { error } = await supabase
+    .from("exercise_sets")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id);
   if (error) throw new Error(error.message);
 }
 

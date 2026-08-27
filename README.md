@@ -400,3 +400,93 @@ el campo todavía (`normalizeTopic()` en `useChapters.ts`).
 solo la lea el server). Se saca en https://platform.deepseek.com. Sin esta variable, el
 resto de la app funciona igual; el botón "Generar con IA" del panel docente falla con un
 error claro (500 desde el endpoint) en vez de romper nada más.
+
+---
+
+## 11. Herramientas del docente (aula invertida)
+
+Esta sección salió de una pasada de investigación sobre qué necesita realmente un docente
+que da clase con modelo invertido, contrastada con lo que la app ya hacía. El hallazgo que
+la motivó: la app le decía al docente **quién va adelante**, pero no **qué explicar el
+martes** — que es la actividad central del modelo.
+
+### 11.1 Panel "Antes de la clase" (`/admin/aulas/[id]/clase`)
+Es *Just-in-Time Teaching*: el docente mira los datos antes de entrar al aula y adapta lo
+que va a explicar. Muestra:
+- **Tipo de error dominante** en toda el aula, con una lectura pedagógica de cada uno
+  (mucho `compile_error` ⇒ traban en sintaxis; mucho `wrong_output` ⇒ traban en la lógica).
+- **Dónde está trabada la clase**: ejercicios ordenados por *cuántos alumnos distintos*
+  quedaron trabados (no por cantidad de intentos: 1 alumno obsesivo no es lo mismo que 8
+  alumnos perdidos).
+- **Quiénes necesitan una mano**: intentaron mucho y avanzaron poco. Son los que no van a
+  pedir ayuda solos.
+- **Quiénes no arrancaron**.
+- **Cola de dudas** (ver 11.3).
+
+Todo se agrega en el cliente desde `progress_events` (`composables/useClassInsights.ts`):
+PostgREST no hace `GROUP BY`, y para un aula real traer las filas y contarlas es más simple
+que mantener una vista SQL por cada corte que se nos ocurra mirar.
+
+**Detalle clave — `progress_events.fail_reason`:** antes un evento `wrong` no guardaba *por
+qué* falló, así que era imposible distinguir "no compila" de "compila pero da mal". Ahora
+`checkCode()` emite el motivo en el evento del bus y `useProgressSync` lo persiste. Los
+eventos anteriores a este cambio tienen `fail_reason = NULL` y simplemente no cuentan para
+ese desglose.
+
+### 11.2 Ver el código real del alumno
+El código que escribió cada alumno **siempre estuvo** sincronizado dentro de
+`students.game_state.exercises[id].savedCode` — nunca se mostraba. Ahora el detalle
+expandido de cada alumno en `/admin/aulas/[id]` tiene "ver código" por ejercicio, con botón
+de copiar (para proyectarlo en clase). Es la diferencia entre *"Juan va 3/7"* y *"Juan puso
+`=` en vez de `==` tres veces seguidas"*.
+
+### 11.3 Cola de dudas: "estoy trabado"
+Tabla `student_questions`. El alumno, desde el ejercicio en el que se trabó, deja una
+consulta que se manda **junto con una foto de su código** (`code_snapshot`). El docente las
+ve todas juntas en el panel y las marca resueltas. Responde a una queja recurrente del
+modelo invertido: durante el trabajo previo el alumno no tiene a quién preguntarle.
+
+### 11.4 Fecha límite por capítulo (`exercise_sets.due_at`)
+Opcional al publicar. El problema #1 documentado del aula invertida es que el trabajo previo
+no se hace; sin una fecha no hay forma de preguntarse "¿quién llegó preparado?". El alumno
+ve la fecha en el material y se le marca en magenta si venció.
+
+### 11.5 Material de teoría generado por IA (`kind: "theory"`)
+**Es un flujo separado del generador de ejercicios, no lo reemplaza.** Un aula puede tener
+capítulos de las dos clases al mismo tiempo:
+
+| | `kind: "exercises"` | `kind: "theory"` |
+|---|---|---|
+| Endpoint | `/api/generate-chapter` | `/api/generate-theory` |
+| Guarda en | `generated_exercises` | `content` |
+| Qué produce | Ejercicios evaluados por el compilador real | Secciones de lectura + preguntas de comprensión |
+| Lo ve el alumno en | `QuestTabs` / `QuestCard` (se juega) | `TheoryPanel.vue` (se lee) |
+
+Se separaron a propósito: son las dos mitades del modelo invertido (la teoría se lee antes,
+los ejercicios se resuelven) y meterlas en un mismo prompt daba peor resultado en ambas.
+
+Las preguntas de comprensión son deliberadamente pocas (máx. 4) y de opción múltiple. La
+investigación es consistente en que si el trabajo previo pesa más que la tarea tradicional,
+los alumnos directamente no lo hacen: son un "ticket de entrada", no un examen. El endpoint
+**descarta** las preguntas cuyo `correctIndex` no apunte a ninguna opción válida — si la IA
+se equivoca ahí, el alumno no podría acertar nunca.
+
+La lectura se registra en `game_state.theoryDone[chapterId]` (aparte de `exercises`, porque
+no es un ejercicio: no da XP de combate ni cuenta como misión).
+
+### 11.6 Editar un capítulo ya publicado
+`updateChapter()` en `useChapters.ts`. Antes, si la IA se mandaba una macana en un caso de
+prueba, la única salida era borrar y regenerar — pagando otra vez la llamada a DeepSeek y
+perdiendo el progreso que los alumnos ya tenían en ese capítulo.
+
+### 11.7 Exportar notas a CSV
+Botón en `/admin/aulas/[id]`. Usa `;` como separador y BOM UTF-8, que es lo que hace que
+Excel en español lo abra en columnas y con los acentos bien en vez de todo en una celda.
+
+### 11.8 Sobre gamificación (nota de diseño)
+La evidencia sobre puntos/badges/rankings es **mixta, no concluyente**, y hay riesgo
+documentado de que el exceso de recompensas extrínsecas erosione la motivación intrínseca.
+Por eso las herramientas de arriba apuntan a **progreso, feedback y dominio** (que es lo que
+la investigación sí respalda) en vez de sumar más capas de recompensa. En particular, **un
+ranking público entre compañeros no está implementado a propósito**: desmotiva justamente a
+la mitad de abajo, que son los alumnos que más se quieren retener.

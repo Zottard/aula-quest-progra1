@@ -27,7 +27,8 @@ function syncedPayload(state: ReturnType<typeof useGameState>["state"]) {
     xp: state.xp,
     exercises: state.exercises,
     equipment: state.equipment,
-    unlockedSkills: state.unlockedSkills
+    unlockedSkills: state.unlockedSkills,
+    theoryDone: state.theoryDone
   };
 }
 
@@ -50,12 +51,19 @@ function schedulePush() {
   }, 900);
 }
 
+/** Motivo por el que falló un intento. Se guarda solo en eventos "wrong" y
+ * es lo que le permite al docente distinguir "la clase no sabe compilar"
+ * (compile_error) de "la clase tiene mal la lógica" (wrong_output), que
+ * piden intervenciones distintas. Ver el panel en /admin/aulas/[id]/clase. */
+export type FailReason = "compile_error" | "wrong_output" | "runtime_error" | "timeout" | "network_error";
+
 async function logEvent(entry: {
   exerciseId: string;
   bugId?: string | null;
   type: "solved" | "wrong" | "complete" | "levelup";
   hinted?: boolean;
   xpGained?: number;
+  failReason?: FailReason | null;
 }) {
   if (!isSupabaseConfigured()) return;
   const { state } = useGameState();
@@ -67,7 +75,8 @@ async function logEvent(entry: {
     bug_id: entry.bugId ?? null,
     event_type: entry.type,
     hinted: !!entry.hinted,
-    xp_gained: entry.xpGained ?? 0
+    xp_gained: entry.xpGained ?? 0,
+    fail_reason: entry.failReason ?? null
   });
   if (error) console.warn("[useProgressSync] no se pudo loguear el evento:", error.message);
 }
@@ -140,7 +149,7 @@ export function initProgressSync() {
   const bus = useEventBus();
 
   watch(
-    () => [state.xp, state.exercises, state.equipment, state.unlockedSkills],
+    () => [state.xp, state.exercises, state.equipment, state.unlockedSkills, state.theoryDone],
     () => {
       if (state.studentId) schedulePush();
     },
@@ -156,7 +165,9 @@ export function initProgressSync() {
       xpGained: p?.xpGain
     })
   );
-  bus.on("wrong", (p: any) => logEvent({ exerciseId: p?.exerciseId, type: "wrong" }));
+  bus.on("wrong", (p: any) =>
+    logEvent({ exerciseId: p?.exerciseId, type: "wrong", failReason: p?.reason ?? null })
+  );
   bus.on("complete", (p: any) => logEvent({ exerciseId: p?.exerciseId, type: "complete" }));
   bus.on("levelup", () => logEvent({ exerciseId: state.activeId, type: "levelup" }));
 }

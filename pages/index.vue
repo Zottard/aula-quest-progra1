@@ -29,6 +29,7 @@ const { state, toggleMute } = useGameState();
     <div class="layout">
       <CharacterPanel />
       <section class="quest-panel">
+        <TheoryPanel />
         <BattleHUD />
         <QuestTabs />
         <QuestCard />
