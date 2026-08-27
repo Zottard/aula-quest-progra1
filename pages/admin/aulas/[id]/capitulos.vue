@@ -11,6 +11,7 @@ import {
   publishTheory,
   setChapterStatus,
   deleteChapter,
+  updateChapter,
   type GeneratedExercise,
   type TheorySection,
   type TheoryCheck
@@ -180,6 +181,27 @@ const selectedCount = computed(() => reviewExercises.value?.filter((e) => e.sele
 function expectedValuesText(tc: GeneratedExercise["testCases"][number]): string {
   return tc.expectedValues.join(", ");
 }
+
+/** Etiquetas de los datos de entrada, editables como texto separado por
+ * comas. Es lo que ve el alumno para saber en qué orden escribir sus cin. */
+function inputSpecText(ex: ReviewExercise): string {
+  return (ex.inputSpec ?? []).join(", ");
+}
+function setInputSpecText(ex: ReviewExercise, value: string) {
+  ex.inputSpec = value
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+}
+/** Cuántos valores manda realmente el primer caso: si no coincide con la
+ * cantidad de etiquetas, el alumno va a ver el orden incompleto. */
+function inputCountMismatch(ex: ReviewExercise): boolean {
+  const spec = ex.inputSpec ?? [];
+  const first = ex.testCases?.[0];
+  if (!first) return false;
+  const n = first.stdin.split("\n").filter((v) => v.trim()).length;
+  return spec.length !== n;
+}
 function setExpectedValuesText(tc: GeneratedExercise["testCases"][number], value: string) {
   tc.expectedValues = value
     .split(",")
@@ -239,6 +261,63 @@ async function handleDelete(ch: ChapterRow) {
   } catch (e: any) {
     listError.value = e?.message ?? "No se pudo borrar.";
   }
+}
+
+/* ---------------- editar un capítulo ya publicado ---------------- */
+// Sin esto, arreglar un caso de prueba que la IA armó mal obligaba a borrar y
+// regenerar todo el capítulo: se paga otra vez la llamada y los alumnos
+// pierden el progreso que tenían en él.
+const editingId = ref<string | null>(null);
+const editDraft = ref<ChapterRow | null>(null);
+const savingEdit = ref(false);
+
+function startEdit(ch: ChapterRow) {
+  if (editingId.value === ch.id) {
+    editingId.value = null;
+    editDraft.value = null;
+    return;
+  }
+  editingId.value = ch.id;
+  // Copia profunda: si el docente cancela, la tarjeta de la lista queda intacta.
+  editDraft.value = JSON.parse(JSON.stringify(ch));
+}
+
+function toLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+async function saveEdit() {
+  if (!editDraft.value || savingEdit.value) return;
+  savingEdit.value = true;
+  listError.value = "";
+  try {
+    const d = editDraft.value;
+    await updateChapter(d.id, {
+      title: d.title,
+      due_at: d.due_at || null,
+      ...(d.kind === "theory" ? { content: d.content } : { generated_exercises: d.generated_exercises })
+    });
+    editingId.value = null;
+    editDraft.value = null;
+    await loadChapters();
+  } catch (e: any) {
+    listError.value = e?.message ?? "No se pudo guardar.";
+  } finally {
+    savingEdit.value = false;
+  }
+}
+
+function specTextOf(ex: GeneratedExercise): string {
+  return (ex.inputSpec ?? []).join(", ");
+}
+function setSpecTextOf(ex: GeneratedExercise, value: string) {
+  ex.inputSpec = value
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
 }
 
 function formatDate(iso: string): string {
@@ -376,6 +455,22 @@ onMounted(loadChapters);
           <span class="case-count">{{ ex.testCases.length }} caso{{ ex.testCases.length > 1 ? "s" : "" }}</span>
         </div>
         <textarea v-model="ex.briefing" class="briefing-input" rows="2" />
+
+        <label class="spec-field">
+          <span>Datos que carga el usuario, en orden (separados por comas) — lo ve el alumno</span>
+          <input
+            type="text"
+            class="case-input"
+            placeholder="Ej: cantidad de horas trabajadas, valor por hora"
+            :value="inputSpecText(ex)"
+            @input="setInputSpecText(ex, ($event.target as HTMLInputElement).value)"
+          />
+        </label>
+        <p v-if="inputCountMismatch(ex)" class="hint warn tiny">
+          ⚠ La cantidad de etiquetas no coincide con los valores del primer caso. Al alumno le va a faltar
+          saber el orden de alguno.
+        </p>
+
         <div class="cases">
           <div v-for="(tc, j) in ex.testCases" :key="j" class="case-row" :class="{ computed: tc.computed }">
             <div v-if="tc.computed" class="computed-warn">
@@ -438,12 +533,80 @@ onMounted(loadChapters);
           <div v-if="ch.due_at" class="chapter-due">⏰ para el {{ formatDate(ch.due_at) }}</div>
           <div class="chapter-status">{{ ch.status }}</div>
           <div class="chapter-actions">
+            <button class="btn ghost small" @click="startEdit(ch)">
+              {{ editingId === ch.id ? "Cerrar" : "Editar" }}
+            </button>
             <button class="btn ghost small" @click="toggleStatus(ch)">
               {{ ch.status === "published" ? "Archivar" : "Publicar" }}
             </button>
             <button class="btn ghost small danger" @click="handleDelete(ch)">Borrar</button>
           </div>
         </div>
+      </div>
+
+      <div v-if="editDraft" class="edit-box pxframe">
+        <h3 class="edit-title">Editando: {{ editDraft.title }}</h3>
+
+        <label class="field">
+          <span>Título</span>
+          <input v-model="editDraft.title" type="text" maxlength="80" />
+        </label>
+        <label class="field">
+          <span>Fecha límite (vacío = sin fecha)</span>
+          <input
+            type="datetime-local"
+            :value="toLocalInput(editDraft.due_at)"
+            @input="editDraft.due_at = ($event.target as HTMLInputElement).value ? new Date(($event.target as HTMLInputElement).value).toISOString() : null"
+          />
+        </label>
+
+        <template v-if="editDraft.kind === 'theory'">
+          <div v-for="(sec, i) in editDraft.content?.sections ?? []" :key="'es' + i" class="review-item">
+            <input v-model="sec.heading" type="text" class="title-input" />
+            <textarea v-model="sec.body" class="briefing-input" rows="4" />
+          </div>
+        </template>
+
+        <template v-else>
+          <div v-for="(ex, i) in editDraft.generated_exercises" :key="'ee' + i" class="review-item">
+            <input v-model="ex.title" type="text" class="title-input" />
+            <textarea v-model="ex.briefing" class="briefing-input" rows="2" />
+            <label class="spec-field">
+              <span>Datos que carga el usuario, en orden (separados por comas)</span>
+              <input
+                type="text"
+                class="case-input"
+                placeholder="Ej: cantidad de horas trabajadas, valor por hora"
+                :value="specTextOf(ex)"
+                @input="setSpecTextOf(ex, ($event.target as HTMLInputElement).value)"
+              />
+            </label>
+            <div class="cases">
+              <div v-for="(tc, j) in ex.testCases" :key="j" class="case-row" :class="{ computed: tc.computed }">
+                <div v-if="tc.computed" class="computed-warn">⚠ Caso calculado por la IA — verificá la cuenta.</div>
+                <div class="case-fields">
+                  <label class="case-field">
+                    <span>stdin (un valor por línea)</span>
+                    <textarea v-model="tc.stdin" class="case-input" rows="2" />
+                  </label>
+                  <label class="case-field">
+                    <span>resultado esperado (separado por comas)</span>
+                    <input
+                      type="text"
+                      class="case-input"
+                      :value="expectedValuesText(tc)"
+                      @input="setExpectedValuesText(tc, ($event.target as HTMLInputElement).value)"
+                    />
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <button class="btn" :disabled="savingEdit" @click="saveEdit">
+          {{ savingEdit ? "Guardando…" : "Guardar cambios" }}
+        </button>
       </div>
     </section>
   </div>
@@ -670,6 +833,31 @@ input[type="file"] {
 .hint.tiny {
   font-size: 0.85rem;
   margin: 0.3rem 0 0;
+}
+.edit-box {
+  background: var(--bg-panel);
+  border: 3px solid var(--amber);
+  outline: 3px solid var(--border-dark);
+  outline-offset: -6px;
+  padding: 1.1rem 1.2rem;
+  margin-top: 1rem;
+}
+.edit-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.72rem;
+  color: var(--amber);
+  margin: 0 0 0.8rem;
+}
+.spec-field {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+.spec-field span {
+  display: block;
+  font-family: "VT323", monospace;
+  color: var(--cyan);
+  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
 }
 .checks-heading {
   font-family: "Press Start 2P", monospace;

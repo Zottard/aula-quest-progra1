@@ -44,6 +44,11 @@ export interface Exercise {
    * por cada caso, con matching flexible en vez de salida exacta, porque acá
    * el enunciado no fija el formato de impresión. */
   testCases?: TestCase[];
+  /** Los datos que el programa va a leer por teclado, en el orden en que los
+   * lee. Se le muestra al alumno junto al enunciado: sin esto no puede saber
+   * en qué orden escribir sus cin, y falla por el orden aunque la lógica esté
+   * bien. Solo en ejercicios de capítulo. */
+  inputSpec?: string[];
   /** XP total al completar un ejercicio de capítulo (no tiene bugs[] con XP
    * individual). Ignorado si testCases no está presente. */
   xpReward?: number;

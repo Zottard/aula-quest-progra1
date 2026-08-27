@@ -497,9 +497,12 @@ La lectura se registra en `game_state.theoryDone[chapterId]` (aparte de `exercis
 no es un ejercicio: no da XP de combate ni cuenta como misión).
 
 ### 11.6 Editar un capítulo ya publicado
-`updateChapter()` en `useChapters.ts`. Antes, si la IA se mandaba una macana en un caso de
-prueba, la única salida era borrar y regenerar — pagando otra vez la llamada a DeepSeek y
-perdiendo el progreso que los alumnos ya tenían en ese capítulo.
+Botón "Editar" en cada tarjeta de `/admin/aulas/[id]/capitulos` → `updateChapter()`. Permite
+corregir título, fecha límite, consignas, `inputSpec` y casos de prueba **sin regenerar**.
+Antes, si la IA se mandaba una macana en un caso, la única salida era borrar y regenerar:
+se pagaba otra vez la llamada a DeepSeek y los alumnos perdían el progreso de ese capítulo.
+También es la vía para **backfillear `inputSpec`** (ver 11.10) en capítulos publicados antes
+de que ese campo existiera (ver 11.9).
 
 ### 11.7 Exportar notas a CSV
 Botón en `/admin/aulas/[id]`. Usa `;` como separador y BOM UTF-8, que es lo que hace que
@@ -514,7 +517,27 @@ progreso **no** se copian, obviamente.
 comisión original, y copiarlas haría que a los alumnos de la comisión nueva les apareciera
 todo "vencido" el primer día. La UI avisa que hay que recargarlas.
 
-### 11.9 Sobre gamificación (nota de diseño)
+### 11.9 `inputSpec`: qué datos recibe el programa y en qué orden
+Los casos de prueba le mandan valores al programa por `stdin`, pero el alumno **no tenía
+forma de saber cuáles ni en qué orden**. Con un solo dato se adivina; con "ingresar la
+cantidad de horas trabajadas y el valor por hora" es imposible saber cuál lee primero, y el
+programa falla por el orden de los `cin` aunque la lógica esté perfecta — un falso negativo
+puramente de comunicación.
+
+Cada ejercicio de capítulo lleva ahora `inputSpec: string[]`: las etiquetas de los datos de
+entrada **en el mismo orden en que se leen**. Lo genera la IA en la misma llamada (regla
+explícita en el prompt: un elemento por cada línea de `stdin`), el docente puede corregirlo,
+y `QuestCard.vue` lo muestra junto al enunciado como "📥 Datos que va a cargar el usuario",
+numerado y con el valor concreto del primer caso al lado.
+
+La pantalla de publicación **avisa si la cantidad de etiquetas no coincide** con los valores
+del primer caso, porque en ese estado el alumno vería el orden incompleto.
+
+Capítulos publicados antes de esto no tienen `inputSpec`: se muestran igual, con los valores
+pero sin etiqueta ("valor 1 → 40"). Se les puede agregar la etiqueta desde el editor (11.6)
+sin volver a llamar a la IA.
+
+### 11.10 Sobre gamificación (nota de diseño)
 La evidencia sobre puntos/badges/rankings es **mixta, no concluyente**, y hay riesgo
 documentado de que el exceso de recompensas extrínsecas erosione la motivación intrínseca.
 Por eso las herramientas de arriba apuntan a **progreso, feedback y dominio** (que es lo que

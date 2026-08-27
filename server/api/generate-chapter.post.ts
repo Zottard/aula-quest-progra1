@@ -37,6 +37,7 @@ Generá COMO MÁXIMO ${MAX_EXERCISES} ejercicios en total. Si el texto trae más
 Para CADA ejercicio que proceses (de los que traen ejemplo resuelto y de los que no):
 - "title": título corto, ej "Ejercicio 3 · Sueldo del vendedor".
 - "briefing": la consigna para el alumno, en HTML simple (uno o dos <p>), clara. Mismo problema que el original, podés prolijar la redacción pero NO cambiarlo ni agregar datos que no estén.
+- "inputSpec": lista de los datos que el programa va a leer con cin, EN EL MISMO ORDEN en que los lee, descritos en pocas palabras. Ej: ["cantidad de horas trabajadas", "valor por hora"]. Es lo que el alumno necesita saber para escribir sus cin en el orden correcto. Si el programa no lee nada por teclado, devolvé [].
 - "topic": el tipo de batalla, EXACTAMENTE uno de "operadores" | "ciclos" | "vectores", según qué hace falta para resolverlo:
   - "operadores": alcanza con variables sueltas, cuentas aritméticas y como mucho un if — no hay que repetir nada ni guardar una lista de valores. Es el caso más común en guías introductorias (la gran mayoría de "ingresá X e Y, calculá Z" son esto).
   - "ciclos": hace falta repetir algo un número de veces o hasta cumplir una condición (sumar/contar/acumular varios valores ingresados uno por uno, por ejemplo).
@@ -49,8 +50,9 @@ Para CADA ejercicio que proceses (de los que traen ejemplo resuelto y de los que
 
 Reglas estrictas:
 - NO escribas el código de la solución.
+- "inputSpec" tiene que tener exactamente un elemento por cada línea de "stdin", en el mismo orden. Si no coinciden, el alumno no puede saber en qué orden poner sus cin.
 - Si el caso es "computed": true, la cuenta tiene que estar bien hecha — el docente puede confiar en el número si no lo corrige, así que verificala vos mismo antes de responder.
-- Devolvé SOLO este JSON, sin texto adicional: {"exercises":[{"title":"...","briefing":"...","topic":"operadores","testCases":[{"stdin":"...","expectedValues":["..."],"computed":false}]}]}`;
+- Devolvé SOLO este JSON, sin texto adicional: {"exercises":[{"title":"...","briefing":"...","inputSpec":["..."],"topic":"operadores","testCases":[{"stdin":"...","expectedValues":["..."],"computed":false}]}]}`;
 
 interface DeepSeekChoice {
   message?: { content?: string };

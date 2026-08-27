@@ -13,6 +13,29 @@ const { state, exState, saveCode, checkCode, compiling, resetCode, useHint, find
 // Se corrige solo apenas termina de cargar (exercise es reactivo).
 const exercise = computed(() => findExercise(state.activeId) ?? EXERCISES[0]);
 const isChapter = computed(() => !!exercise.value.testCases);
+
+/** Contrato de entrada del ejercicio: qué valores le va a mandar el
+ * corrector, en qué orden. El alumno no puede deducirlo del enunciado
+ * ("ingresar horas y valor por hora" no dice cuál va primero), así que sin
+ * esto falla por el orden de los cin aunque la lógica esté perfecta. */
+const inputLines = computed(() => {
+  const tc = exercise.value.testCases?.[0];
+  if (!tc) return [];
+  return tc.stdin
+    .split("\n")
+    .map((v) => v.trim())
+    .filter(Boolean);
+});
+
+const inputRows = computed(() => {
+  const spec = exercise.value.inputSpec ?? [];
+  const vals = inputLines.value;
+  // Si la IA no dio etiquetas (capítulos viejos) o la cantidad no coincide,
+  // igual mostramos los valores: saber el orden es lo que importa.
+  return vals.map((value, i) => ({ label: spec[i] ?? null, value, n: i + 1 }));
+});
+
+const firstExpected = computed(() => exercise.value.testCases?.[0]?.expectedValues ?? []);
 const es = computed(() => exState(exercise.value.id));
 const isCompiling = computed(() => !!compiling[exercise.value.id]);
 
@@ -129,6 +152,27 @@ async function sendHelp() {
         Escribí el programa completo a partir del enunciado y compilá para verificar
         ({{ exercise.testCases!.length }} caso{{ exercise.testCases!.length > 1 ? "s" : "" }} de prueba).
       </p>
+
+      <div v-if="isChapter && inputRows.length" class="io-contract">
+        <div class="io-title">📥 Datos que va a cargar el usuario — en este orden</div>
+        <ol class="io-list">
+          <li v-for="row in inputRows" :key="row.n">
+            <span v-if="row.label" class="io-label">{{ row.label }}</span>
+            <span v-else class="io-label dim">valor {{ row.n }}</span>
+            <span class="io-arrow">→</span>
+            <code class="io-value">{{ row.value }}</code>
+          </li>
+        </ol>
+        <p class="io-note">
+          Tu programa tiene que leerlos con <code>cin</code> en ese mismo orden.
+          <template v-if="firstExpected.length">
+            Con esos valores debe mostrar <strong>{{ firstExpected.join(", ") }}</strong>.
+          </template>
+        </p>
+        <p v-if="exercise.testCases!.length > 1" class="io-note dim">
+          Se prueba con {{ exercise.testCases!.length }} juegos de valores distintos, no solo con este.
+        </p>
+      </div>
       <p v-else class="quest-sub">
         {{ exercise.bugs.length }} bug{{ exercise.bugs.length > 1 ? "s" : "" }} escondido{{
           exercise.bugs.length > 1 ? "s" : ""
@@ -223,6 +267,72 @@ async function sendHelp() {
   font-family: "VT323", monospace;
   font-size: 1.05rem;
   margin: 0 0 0.9rem;
+}
+.io-contract {
+  background: #0a0810;
+  border: 2px solid var(--border-dark);
+  outline: 1px solid var(--cyan);
+  outline-offset: -2px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 0.9rem;
+}
+.io-title {
+  font-family: "VT323", monospace;
+  color: var(--cyan);
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+  margin-bottom: 0.45rem;
+}
+.io-list {
+  margin: 0 0 0.5rem;
+  padding-left: 1.4rem;
+}
+.io-list li {
+  font-family: "VT323", monospace;
+  font-size: 1.02rem;
+  color: var(--cream-dim);
+  padding: 0.1rem 0;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.io-label {
+  color: var(--cream);
+}
+.io-label.dim {
+  color: var(--cream-dim);
+  font-style: italic;
+}
+.io-arrow {
+  color: var(--border-light);
+}
+.io-value {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.82rem;
+  background: #14101c;
+  border: 1px solid var(--border-dark);
+  color: var(--amber);
+  padding: 0.05rem 0.35rem;
+}
+.io-note {
+  font-family: "VT323", monospace;
+  font-size: 0.95rem;
+  color: var(--cream-dim);
+  margin: 0;
+  line-height: 1.4;
+}
+.io-note.dim {
+  opacity: 0.7;
+  margin-top: 0.2rem;
+}
+.io-note strong {
+  color: var(--cyan);
+}
+.io-note code {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.8rem;
+  color: var(--amber);
 }
 .editor-wrap {
   display: flex;

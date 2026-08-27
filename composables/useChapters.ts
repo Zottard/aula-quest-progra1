@@ -30,6 +30,10 @@ int main() {
 export interface GeneratedExercise {
   title: string;
   briefing: string;
+  /** Qué lee el programa por teclado, en el orden en que lo lee. Sin esto el
+   * alumno ve "ingresar horas y valor por hora" pero no sabe cuál va primero,
+   * y su programa falla por el orden de los cin aunque la lógica esté bien. */
+  inputSpec?: string[];
   /** operadores/ciclos/vectores — lo asigna la IA (o lo corrige el docente en
    * la pantalla de publicación) para que la afinidad de arma también aplique
    * a los capítulos, no solo a las 7 misiones fijas. */
@@ -83,6 +87,7 @@ export function mapRowToExercises(row: ExerciseSetRow): Exercise[] {
     briefing: ge.briefing,
     code: CHAPTER_SKELETON,
     testCases: ge.testCases,
+    inputSpec: ge.inputSpec ?? [],
     xpReward: 60,
     chapterId: row.id,
     chapterTitle: row.title,
