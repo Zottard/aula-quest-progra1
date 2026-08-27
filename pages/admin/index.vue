@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useSupabase } from "~/composables/useSupabase";
 import { useTeacherAuth, type TeacherProfile } from "~/composables/useTeacherAuth";
+import { copyChaptersToAula } from "~/composables/useChapters";
 
 definePageMeta({ middleware: "admin-auth" });
 
@@ -89,6 +90,52 @@ async function createAula() {
   creating.value = false;
 }
 
+/* ---------------- duplicar un aula para otra comisión ---------------- */
+const duplicatingId = ref<string | null>(null);
+
+async function duplicateAula(source: Aula) {
+  if (duplicatingId.value || !teacher.value) return;
+  const name = prompt(
+    `Nombre del aula nueva (se copia el contenido de "${source.name}", no los alumnos):`,
+    `${source.name} — copia`
+  );
+  if (name === null) return;
+  const finalName = name.trim() || `${source.name} — copia`;
+
+  duplicatingId.value = source.id;
+  errorMsg.value = "";
+  try {
+    // 1) aula nueva con su propio código de invitación
+    let created: Aula | null = null;
+    for (let attempt = 0; attempt < 2 && !created; attempt++) {
+      const { data, error } = await supabase
+        .from("aulas")
+        .insert({ name: finalName, teacher_id: teacher.value.id, join_code: generateJoinCode() })
+        .select()
+        .single();
+      if (!error) {
+        created = data as Aula;
+        break;
+      }
+      if (!error.message.includes("duplicate") && !error.message.includes("unique")) {
+        throw new Error(error.message);
+      }
+    }
+    if (!created) throw new Error("No se pudo generar un código de aula único, probá de nuevo.");
+
+    // 2) copiar los capítulos (el aula queda vacía de alumnos, con el contenido listo)
+    const n = await copyChaptersToAula(source.id, created.id, teacher.value.id);
+    await loadAulas();
+    duplicatedMsg.value = `Se creó "${finalName}" con ${n} capítulo(s) copiados. Revisá las fechas límite: quedaron vacías.`;
+  } catch (e: any) {
+    errorMsg.value = e?.message ?? "No se pudo duplicar el aula.";
+  } finally {
+    duplicatingId.value = null;
+  }
+}
+
+const duplicatedMsg = ref("");
+
 async function logout() {
   await signOut();
   await navigateTo("/admin/login");
@@ -141,6 +188,7 @@ onMounted(async () => {
     </section>
 
     <div v-if="errorMsg" class="error-box">{{ errorMsg }}</div>
+    <div v-if="duplicatedMsg" class="info-box">{{ duplicatedMsg }}</div>
 
     <p v-if="loading" class="loading">Cargando…</p>
     <p v-else-if="aulas.length === 0" class="empty">Todavía no creaste ninguna aula.</p>
@@ -153,6 +201,14 @@ onMounted(async () => {
           <span class="join-code">{{ a.join_code }}</span>
           <span class="copy-hint">{{ copiedCode === a.join_code ? "¡copiado!" : "copiar" }}</span>
         </div>
+        <button
+          class="dup-btn"
+          :disabled="duplicatingId === a.id"
+          title="Crear otra comisión con el mismo contenido"
+          @click.prevent.stop="duplicateAula(a)"
+        >
+          {{ duplicatingId === a.id ? "duplicando…" : "⧉ duplicar para otra comisión" }}
+        </button>
       </NuxtLink>
     </div>
   </div>
@@ -325,5 +381,33 @@ h1 {
   font-family: "VT323", monospace;
   font-size: 0.85rem;
   color: var(--cream-dim);
+}
+.dup-btn {
+  width: 100%;
+  margin-top: 0.55rem;
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--cream-dim);
+  font-family: "VT323", monospace;
+  font-size: 0.9rem;
+  padding: 0.3rem 0.4rem;
+  cursor: pointer;
+}
+.dup-btn:hover:not(:disabled) {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+.dup-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.info-box {
+  background: rgba(94, 234, 212, 0.1);
+  border: 2px solid var(--cyan);
+  color: var(--cyan);
+  font-family: "VT323", monospace;
+  font-size: 0.95rem;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 1rem;
 }
 </style>

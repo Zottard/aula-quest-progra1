@@ -62,8 +62,30 @@ activo, el golpe es "muy efectivo" (+50% XP). La daga es neutral, Excálibur es 
 que se dibuja superpuesto sobre el avatar (ver `PixelAvatar.vue`).
 
 ### `data/tiers.ts` — niveles del personaje
-5 tiers por rango de nivel, cada uno con su propio sprite de avatar completo (no hay
-"capas" de ropa — cada tier es una imagen distinta).
+5 tiers por rango de nivel. **El tier ya NO cambia el cuerpo del avatar** — solo el título
+y los efectos visuales (ver `data/avatars.ts` abajo).
+
+### `data/avatars.ts` + `scripts/generate-avatars.mjs` — el avatar del alumno
+Los avatares los **elige el alumno** y no cambian nunca solos.
+
+Antes, cada tier era un sprite distinto del pack de Kenney, así que subir de nivel te
+convertía literalmente en otra persona — y como eran cinco personajes premade sin relación
+entre sí, el género aparente iba y venía entre niveles (tier 3 leía como mujer, tier 4 como
+hombre). Era el peor lugar posible para poner una recompensa de progresión: la identidad del
+alumno.
+
+Ahora hay 6 avatares generados por script (`node scripts/generate-avatars.mjs`) que
+comparten **exactamente la misma silueta** — proporción chibi deliberadamente andrógina, sin
+marcadores de género — y difieren solo en paleta y tocado (`plain` / `hood` / `cap`). El
+generador valida que cada fila del sprite mida 16 px, así que una silueta mal editada falla
+al generar en vez de salir deformada.
+
+La progresión de nivel pasó a ser **puramente estética y aditiva** (`TIER_AURAS`): halo de
+color, resplandor, partículas orbitando y una base bajo los pies, que crecen con el tier.
+Tier 1 no tiene aura a propósito, para que se note cuando aparece.
+
+`state.avatarId` se sincroniza dentro de `game_state`, así que el avatar elegido sobrevive
+un cambio de dispositivo igual que el resto del progreso.
 
 ### `composables/useCompiler.ts` — el compilador real
 `runCpp(code)` manda el código a **Wandbox** (`https://wandbox.org/api/compile.json`,
@@ -483,7 +505,16 @@ perdiendo el progreso que los alumnos ya tenían en ese capítulo.
 Botón en `/admin/aulas/[id]`. Usa `;` como separador y BOM UTF-8, que es lo que hace que
 Excel en español lo abra en columnas y con los acentos bien en vez de todo en una celda.
 
-### 11.8 Sobre gamificación (nota de diseño)
+### 11.8 Duplicar un aula para otra comisión
+Botón en cada tarjeta de `/admin`. Crea un aula nueva (con su propio código de invitación) y
+**copia todos los capítulos** — teoría y ejercicios — de la original. Los alumnos y su
+progreso **no** se copian, obviamente.
+
+`due_at` se resetea a `null` en las copias a propósito: las fechas son del cronograma de la
+comisión original, y copiarlas haría que a los alumnos de la comisión nueva les apareciera
+todo "vencido" el primer día. La UI avisa que hay que recargarlas.
+
+### 11.9 Sobre gamificación (nota de diseño)
 La evidencia sobre puntos/badges/rankings es **mixta, no concluyente**, y hay riesgo
 documentado de que el exceso de recompensas extrínsecas erosione la motivación intrínseca.
 Por eso las herramientas de arriba apuntan a **progreso, feedback y dominio** (que es lo que

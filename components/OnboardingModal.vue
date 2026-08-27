@@ -4,7 +4,12 @@ import { useEventBus } from "~/composables/useEventBus";
 import { isSupabaseConfigured } from "~/composables/useSupabase";
 import { registerStudent, claimStudent, updateStudentProfile } from "~/composables/useProgressSync";
 
-const { state, hasIdentity, setNames, isLinkedToAula } = useGameState();
+const { state, hasIdentity, setNames, isLinkedToAula, setAvatarId } = useGameState();
+
+// El avatar se elige acá y no cambia nunca solo: es identidad del alumno, no
+// una recompensa de nivel (ver data/avatars.ts).
+const pickedAvatar = ref(state.avatarId);
+watch(pickedAvatar, (id) => setAvatarId(id));
 const bus = useEventBus();
 
 // Si no hay credenciales de Supabase cargadas (ej. dev local sin .env), el
@@ -146,6 +151,10 @@ function switchMode(next: "register" | "claim") {
             @keyup.enter="submitEdit"
           />
         </label>
+        <div class="field">
+          <span>Tu avatar</span>
+          <AvatarPicker v-model="pickedAvatar" />
+        </div>
 
         <button class="btn" :disabled="!canSubmitEdit" @click="submitEdit">Guardar</button>
         <button class="btn ghost" @click="forceOpen = false">Cancelar</button>
@@ -176,6 +185,10 @@ function switchMode(next: "register" | "claim") {
             @keyup.enter="submitLegacy"
           />
         </label>
+        <div class="field">
+          <span>Elegí tu avatar</span>
+          <AvatarPicker v-model="pickedAvatar" />
+        </div>
 
         <button class="btn" :disabled="!canSubmitLegacy" @click="submitLegacy">
           {{ isFirstTime ? "▶ Empezar misión" : "Guardar" }}
@@ -219,6 +232,10 @@ function switchMode(next: "register" | "claim") {
               @keyup.enter="submitRegister"
             />
           </label>
+          <div class="field">
+            <span>Elegí tu avatar</span>
+            <AvatarPicker v-model="pickedAvatar" />
+          </div>
 
           <button class="btn" :disabled="!canRegister || loading" @click="submitRegister">
             {{ loading ? "Conectando…" : "▶ Empezar misión" }}

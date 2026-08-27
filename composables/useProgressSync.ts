@@ -28,7 +28,8 @@ function syncedPayload(state: ReturnType<typeof useGameState>["state"]) {
     exercises: state.exercises,
     equipment: state.equipment,
     unlockedSkills: state.unlockedSkills,
-    theoryDone: state.theoryDone
+    theoryDone: state.theoryDone,
+    avatarId: state.avatarId
   };
 }
 
@@ -149,7 +150,7 @@ export function initProgressSync() {
   const bus = useEventBus();
 
   watch(
-    () => [state.xp, state.exercises, state.equipment, state.unlockedSkills, state.theoryDone],
+    () => [state.xp, state.exercises, state.equipment, state.unlockedSkills, state.theoryDone, state.avatarId],
     () => {
       if (state.studentId) schedulePush();
     },

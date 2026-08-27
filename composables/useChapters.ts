@@ -235,6 +235,36 @@ export async function setChapterStatus(id: string, status: "draft" | "published"
   if (error) throw new Error(error.message);
 }
 
+/** Copia todos los capítulos (teoría y ejercicios) de un aula a otra. Se usa
+ * al duplicar un aula para otra comisión: el contenido que costó armar se
+ * reusa, pero los alumnos y su progreso NO se copian.
+ *
+ * `due_at` se resetea a null a propósito: las fechas son del cronograma de
+ * la comisión original, y copiarlas haría que a los alumnos de la comisión
+ * nueva les aparezca "vencido" el primer día. */
+export async function copyChaptersToAula(fromAulaId: string, toAulaId: string, teacherId: string): Promise<number> {
+  const supabase = useSupabase();
+  const source = await listChaptersForAula(fromAulaId);
+  if (source.length === 0) return 0;
+
+  const copies = source.map((row) => ({
+    teacher_id: teacherId,
+    aula_id: toAulaId,
+    title: row.title,
+    topic: row.topic,
+    source_pdf_name: row.source_pdf_name,
+    status: row.status,
+    kind: row.kind ?? "exercises",
+    generated_exercises: row.generated_exercises ?? [],
+    content: row.content ?? {},
+    due_at: null
+  }));
+
+  const { error } = await supabase.from("exercise_sets").insert(copies);
+  if (error) throw new Error(error.message);
+  return copies.length;
+}
+
 /** Editar un capítulo YA publicado (feature F). Antes, si la IA se mandaba
  * una macana en un caso de prueba, la única salida era borrar y regenerar —
  * pagando otra vez la llamada a DeepSeek y perdiendo el progreso que los

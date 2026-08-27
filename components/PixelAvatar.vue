@@ -1,6 +1,12 @@
 <script setup lang="ts">
+import { avatarById, auraForTier } from "~/data/avatars";
+
 const props = defineProps<{
+  /** Nivel del personaje. Ya NO decide qué cuerpo se dibuja: solo la
+   * intensidad del aura/efectos. Ver data/avatars.ts. */
   tier: number;
+  /** Avatar elegido por el alumno. Estable, no cambia con el nivel. */
+  avatarId?: string | null;
   leveling: boolean;
   armorImage?: string | null;
   weaponImage?: string;
@@ -9,23 +15,42 @@ const props = defineProps<{
   hurt?: boolean;
 }>();
 
-const TIER_SPRITE: Record<number, string> = {
-  1: "/sprites/avatar_tier1.png",
-  2: "/sprites/avatar_tier2.png",
-  3: "/sprites/avatar_tier3.png",
-  4: "/sprites/avatar_tier4.png",
-  5: "/sprites/avatar_tier5.png"
-};
-const sprite = computed(() => TIER_SPRITE[props.tier] ?? TIER_SPRITE[1]);
+const avatar = computed(() => avatarById(props.avatarId));
+const aura = computed(() => auraForTier(props.tier));
+
+/** Posiciones fijas para las partículas orbitando: precalculadas por índice
+ * para que no "salten" en cada re-render. */
+const particles = computed(() =>
+  Array.from({ length: aura.value.particles }, (_, i) => {
+    const total = aura.value.particles;
+    const angle = (i / total) * Math.PI * 2;
+    return {
+      id: i,
+      x: 50 + Math.cos(angle) * 46,
+      y: 50 + Math.sin(angle) * 46,
+      delay: (i / total) * 3
+    };
+  })
+);
 </script>
 
 <template>
   <div
     class="avatar-wrap"
     :class="{ leveling: props.leveling, attacking: props.attacking, hurt: props.hurt }"
+    :style="{ '--glow': aura.glow ?? 'transparent', '--blur': aura.blur + 'px' }"
   >
-    <div class="aura" :style="{ opacity: props.tier >= 4 ? 1 : 0 }" />
-    <img :src="sprite" :key="sprite" class="sprite" alt="" />
+    <div v-if="aura.glow" class="aura" />
+    <div v-if="aura.ring" class="ring" />
+
+    <span
+      v-for="p in particles"
+      :key="p.id"
+      class="particle"
+      :style="{ left: p.x + '%', top: p.y + '%', animationDelay: p.delay + 's' }"
+    />
+
+    <img :src="avatar.sprite" :key="avatar.sprite" class="sprite" :alt="avatar.name" />
     <img
       v-if="props.weaponImage"
       :src="props.weaponImage"
@@ -66,15 +91,51 @@ const sprite = computed(() => TIER_SPRITE[props.tier] ?? TIER_SPRITE[1]);
   25% { transform: translateX(-6px); filter: brightness(1.8) saturate(0.4); }
   75% { transform: translateX(6px); filter: brightness(1.8) saturate(0.4); }
 }
+
+/* ---- progresión estética: cuanto más alto el nivel, más presencia ---- */
 .aura {
   position: absolute;
-  inset: -20px;
+  inset: -14px;
   border-radius: 50%;
-  transition: opacity 0.5s;
-  background: radial-gradient(circle, rgba(94, 234, 212, 0.3), transparent 65%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--glow) 38%, transparent), transparent 68%);
+  filter: blur(calc(var(--blur) / 3));
+  animation: auraPulse 3.2s ease-in-out infinite;
+  pointer-events: none;
 }
+@keyframes auraPulse {
+  0%, 100% { opacity: 0.55; transform: scale(1); }
+  50% { opacity: 0.95; transform: scale(1.08); }
+}
+.ring {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 62px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--glow) 60%, transparent);
+  box-shadow: 0 0 var(--blur) color-mix(in srgb, var(--glow) 45%, transparent);
+  pointer-events: none;
+}
+.particle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: var(--glow);
+  box-shadow: 0 0 6px var(--glow);
+  transform: translate(-50%, -50%);
+  animation: particleFloat 3s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes particleFloat {
+  0%, 100% { opacity: 0.25; transform: translate(-50%, -50%) scale(0.7); }
+  50% { opacity: 1; transform: translate(-50%, -70%) scale(1.2); }
+}
+
 .sprite {
   position: relative;
+  z-index: 1;
   width: 96px;
   height: 96px;
   image-rendering: pixelated;
@@ -83,6 +144,7 @@ const sprite = computed(() => TIER_SPRITE[props.tier] ?? TIER_SPRITE[1]);
 }
 .held {
   position: absolute;
+  z-index: 2;
   width: 26px;
   height: 26px;
   image-rendering: pixelated;

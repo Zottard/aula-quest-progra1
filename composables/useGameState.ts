@@ -4,6 +4,7 @@ import { XP_PER_LEVEL, levelFromXp, tierForLevel } from "~/data/tiers";
 import { WEAPONS, ARMORS, PETS, type EquipItem, type UnlockCondition } from "~/data/items";
 import type { Topic } from "~/data/modules";
 import { SKILLS } from "~/data/skills";
+import { DEFAULT_AVATAR_ID, avatarById, auraForTier } from "~/data/avatars";
 import { useSound } from "~/composables/useSound";
 import { useEventBus } from "~/composables/useEventBus";
 import { useCompiler, normalizeOutput, outputContainsValue } from "~/composables/useCompiler";
@@ -33,6 +34,9 @@ interface GameState {
   unlockedSkills: string[];
   studentName: string;
   avatarName: string;
+  /** Avatar elegido por el alumno (id de data/avatars.ts). Es una elección
+   * estética estable: NO cambia al subir de nivel. */
+  avatarId: string;
   /** Identidad ligada al panel docente (Supabase). Si el juego corre sin
    * Supabase configurado (dev local sin .env), quedan en null y el juego
    * sigue funcionando 100% local como antes — ver useProgressSync.ts. */
@@ -61,6 +65,7 @@ export interface StudentRow {
     equipment: Equipment;
     unlockedSkills: string[];
     theoryDone: Record<string, { at: string; score: number; total: number }>;
+    avatarId: string;
   }> | null;
   xp: number;
   level: number;
@@ -83,6 +88,7 @@ function defaultState(): GameState {
     unlockedSkills: [],
     studentName: "",
     avatarName: "",
+    avatarId: DEFAULT_AVATAR_ID,
     studentId: null,
     aulaId: null,
     username: null,
@@ -201,6 +207,16 @@ export function useGameState() {
     persist();
   }
 
+  /** El avatar es puramente estético y lo elige el alumno; se puede cambiar
+   * cuando quiera sin perder nada de progreso. */
+  function setAvatarId(id: string) {
+    state.avatarId = avatarById(id).id;
+    persist();
+  }
+  const avatar = computed(() => avatarById(state.avatarId));
+  /** Efectos visuales que sí dependen del nivel (halo, partículas, base). */
+  const aura = computed(() => auraForTier(tierInfo.value.tier));
+
   /** true si esta identidad ya quedó ligada a una fila `students` en
    * Supabase (registro o claim exitoso). Ver useProgressSync.ts. */
   const isLinkedToAula = computed(() => !!state.studentId);
@@ -233,6 +249,7 @@ export function useGameState() {
       if (gs.equipment && typeof gs.equipment === "object") state.equipment = { ...state.equipment, ...gs.equipment };
       if (Array.isArray(gs.unlockedSkills)) state.unlockedSkills = gs.unlockedSkills;
       if (gs.theoryDone && typeof gs.theoryDone === "object") state.theoryDone = gs.theoryDone;
+      if (typeof gs.avatarId === "string") state.avatarId = avatarById(gs.avatarId).id;
     }
     persist();
   }
@@ -616,6 +633,9 @@ export function useGameState() {
     // identidad
     hasIdentity,
     setNames,
+    setAvatarId,
+    avatar,
+    aura,
     isLinkedToAula,
     setIdentityFromStudent,
     // material de teoría

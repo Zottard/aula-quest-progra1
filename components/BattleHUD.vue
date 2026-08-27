@@ -157,6 +157,7 @@ watch(
       <div ref="playerSideRef" class="side player-side">
         <PixelAvatar
           :tier="tierInfo.tier"
+          :avatar-id="state.avatarId"
           :leveling="false"
           :armor-image="equippedArmor?.image ?? null"
           :weapon-image="equippedWeapon.image"

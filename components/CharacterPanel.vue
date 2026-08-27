@@ -52,6 +52,7 @@ function handleReset() {
       </div>
       <PixelAvatar
         :tier="tierInfo.tier"
+        :avatar-id="state.avatarId"
         :leveling="leveling"
         :armor-image="equippedArmor?.image ?? null"
         :weapon-image="equippedWeapon.image"
