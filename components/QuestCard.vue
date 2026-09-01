@@ -1,17 +1,26 @@
 <script setup lang="ts">
-import { EXERCISES } from "~/data/exercises";
 import { useGameState } from "~/composables/useGameState";
 import { askForHelp } from "~/composables/useStudentQuestions";
 
-const { state, exState, saveCode, checkCode, compiling, resetCode, useHint, findExercise, isLinkedToAula } =
-  useGameState();
+const {
+  state,
+  exState,
+  saveCode,
+  checkCode,
+  compiling,
+  resetCode,
+  useHint,
+  findExercise,
+  isLinkedToAula,
+  baseExercises
+} = useGameState();
 
 // Fallback a la misión 1: si activeId apunta a un ejercicio de capítulo y la
 // página recién recargó, chapterExercises todavía puede estar vacío (se
 // carga async desde Supabase) — sin este fallback, exercise.value queda
 // undefined por un instante y cualquier .id/.bugs de acá abajo revienta.
 // Se corrige solo apenas termina de cargar (exercise es reactivo).
-const exercise = computed(() => findExercise(state.activeId) ?? EXERCISES[0]);
+const exercise = computed(() => findExercise(state.activeId) ?? baseExercises.value[0]);
 const isChapter = computed(() => !!exercise.value.testCases);
 
 /** Contrato de entrada del ejercicio: qué valores le va a mandar el

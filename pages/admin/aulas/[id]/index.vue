@@ -3,6 +3,7 @@ import { useSupabase } from "~/composables/useSupabase";
 import { EXERCISES, type Exercise } from "~/data/exercises";
 import type { StudentRow } from "~/composables/useGameState";
 import { listChaptersForAula, mapRowToExercises } from "~/composables/useChapters";
+import { listOverridesForAula, applyPatch, type ExercisePatch } from "~/composables/useExerciseOverrides";
 
 definePageMeta({ middleware: "admin-auth" });
 
@@ -42,6 +43,12 @@ const errorMsg = ref("");
 // solo recorría EXERCISES (las 7 misiones fijas) y un capítulo aprobado
 // desaparecía sin dejar rastro en el panel del docente.
 const chapterExercises = ref<Exercise[]>([]);
+
+// Las misiones fijas tal como las ve ESTA aula (con los parches del docente
+// aplicados), para que el desglose no muestre títulos que sus alumnos nunca
+// vieron. Ver /admin/aulas/[id]/misiones.
+const overridePatches = ref<Record<string, ExercisePatch>>({});
+const baseExercises = computed(() => EXERCISES.map((ex) => applyPatch(ex, overridePatches.value[ex.id])));
 
 const expandedId = ref<string | null>(null);
 const detailCache = ref<Record<string, StudentRow>>({});
@@ -102,8 +109,13 @@ async function loadAll() {
   students.value = (studentsData as StudentOverview[]) ?? [];
 
   try {
-    const rows = await listChaptersForAula(aulaId);
-    chapterExercises.value = rows.filter((r) => r.status === "published").flatMap(mapRowToExercises);
+    const [rows, ovr] = await Promise.all([listChaptersForAula(aulaId), listOverridesForAula(aulaId)]);
+    chapterExercises.value = rows
+      .filter((r) => r.status === "published" && r.kind !== "theory")
+      .flatMap(mapRowToExercises);
+    const map: Record<string, ExercisePatch> = {};
+    for (const o of ovr) map[o.exercise_id] = o.patch ?? {};
+    overridePatches.value = map;
   } catch (e: any) {
     // No bloqueamos el roster si esto falla — el desglose de capítulos
     // simplemente queda vacío, el resto de la página sigue andando.
@@ -253,6 +265,7 @@ onMounted(loadAll);
         <div class="header-actions">
           <NuxtLink :to="`/admin/aulas/${aulaId}/clase`" class="btn">🔥 Antes de la clase</NuxtLink>
           <NuxtLink :to="`/admin/aulas/${aulaId}/capitulos`" class="btn ghost">📘 Capítulos</NuxtLink>
+          <NuxtLink :to="`/admin/aulas/${aulaId}/misiones`" class="btn ghost">🎯 Misiones base</NuxtLink>
           <button v-if="students.length" class="btn ghost" @click="exportCsv">⬇ CSV</button>
           <div class="join-code-row" @click="copyCode">
             <span class="join-code-label">código:</span>
@@ -304,7 +317,7 @@ onMounted(loadAll);
             <p v-if="detailLoading[s.id]" class="loading">Cargando detalle…</p>
             <p v-else-if="detailError[s.id]" class="error-box">{{ detailError[s.id] }}</p>
             <div v-else-if="detailCache[s.id]" class="exercise-list">
-              <div v-for="ex in EXERCISES" :key="ex.id" class="exercise-item">
+              <div v-for="ex in baseExercises" :key="ex.id" class="exercise-item">
                 <div class="exercise-head">
                   <span class="exercise-status" :class="{ done: exerciseStatus(detailCache[s.id], ex.id).completed }">
                     {{ exerciseStatus(detailCache[s.id], ex.id).completed ? "✔" : "○" }}

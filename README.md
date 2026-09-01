@@ -325,6 +325,8 @@ que entrar al dashboard y tildarlo una sola vez.
 | `/admin` | Lista de aulas del docente + crear aula nueva |
 | `/admin/aulas/[id]` | Roster de alumnos de una aula + detalle por misión/bug |
 | `/admin/aulas/[id]/capitulos` | Subir PDF → generar capítulo con IA → publicar (sección 10) |
+| `/admin/aulas/[id]/clase` | Panel "Antes de la clase" / JiTT (sección 11.1) |
+| `/admin/aulas/[id]/misiones` | Editar las 7 misiones base solo para esa aula (sección 11.10) |
 
 `middleware/admin-auth.ts` protege todo `/admin/**` excepto `/admin/login`.
 
@@ -537,7 +539,36 @@ Capítulos publicados antes de esto no tienen `inputSpec`: se muestran igual, co
 pero sin etiqueta ("valor 1 → 40"). Se les puede agregar la etiqueta desde el editor (11.6)
 sin volver a llamar a la IA.
 
-### 11.10 Sobre gamificación (nota de diseño)
+### 11.10 Editar las 7 misiones base, por aula (`exercise_overrides`)
+Las 7 misiones fijas viven en `data/exercises.ts` y son **globales y hardcodeadas** — tienen
+que serlo para que el juego corra sin Supabase (ver sección 1). Pero un docente necesita
+poder adaptarlas: reescribir el enunciado, cambiar el código inicial, y sobre todo ajustar
+el **resultado esperado con el que se corrige**.
+
+Hacerlas editables "de verdad" rompería el modo local y, peor, haría que un cambio en una
+comisión afectara a todas. En vez de eso, cada aula guarda un **parche** (`exercise_overrides`,
+único por `(aula_id, exercise_id)`) que se aplica encima de la definición global al cargar
+(`applyPatch()` en `useExerciseOverrides.ts`). Sin aula, sin Supabase o sin parche, las
+misiones se ven exactamente como están en el código.
+
+Dos decisiones que importan:
+- **Se guarda solo lo que difiere del original** (`buildPatch()`): si mañana se corrige una
+  misión de fábrica, las aulas que no tocaron ese campo heredan la corrección. Y si el
+  docente edita hasta dejar todo igual al original, el parche se borra en vez de guardarse
+  vacío.
+- **`bugs` se mergea por id, no reemplaza el array.** Solo se pueden reescribir `label`,
+  `hint` y `explanation`; el XP y la detección no se tocan desde la UI, así que un docente no
+  puede romper el sistema de puntaje sin querer.
+
+`baseExercises` en `useGameState.ts` es la lista ya parcheada: **todo el juego lee de ahí y
+no de `EXERCISES` directo**. Si algún componente importara `EXERCISES` directamente para
+mostrar contenido, el alumno vería el enunciado de fábrica y —mucho peor— se lo corregiría
+contra el `expectedOutput` de fábrica en vez del que puso su docente.
+
+Pantalla: `/admin/aulas/[id]/misiones`. Marca cuáles están editadas y tiene "Restaurar" por
+misión para volver a la de fábrica.
+
+### 11.11 Sobre gamificación (nota de diseño)
 La evidencia sobre puntos/badges/rankings es **mixta, no concluyente**, y hay riesgo
 documentado de que el exceso de recompensas extrínsecas erosione la motivación intrínseca.
 Por eso las herramientas de arriba apuntan a **progreso, feedback y dominio** (que es lo que

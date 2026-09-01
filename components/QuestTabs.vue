@@ -1,17 +1,21 @@
 <script setup lang="ts">
-import { EXERCISES, type Exercise } from "~/data/exercises";
+import type { Exercise } from "~/data/exercises";
 import { MODULES, moduleFor } from "~/data/modules";
 import { useGameState } from "~/composables/useGameState";
 
-const { state, exState, isUnlocked, setActive, chapterExercises } = useGameState();
+const { state, exState, isUnlocked, setActive, chapterExercises, baseExercises } = useGameState();
 
+// baseExercises y no EXERCISES: así el tooltip del tab muestra el título que
+// puso el docente de este aula, si lo cambió.
 const groups = computed(() =>
   MODULES.filter((m) => m.id !== "capitulo")
     .map((m) => ({
       mod: m,
-      items: EXERCISES.map((ex, idx) => ({ ex, idx })).filter(({ ex }) => ex.topic === m.id && !ex.boss)
+      items: baseExercises.value.map((ex, idx) => ({ ex, idx })).filter(({ ex }) => ex.topic === m.id && !ex.boss)
     }))
-    .concat([{ mod: null as any, items: EXERCISES.map((ex, idx) => ({ ex, idx })).filter(({ ex }) => ex.boss) }])
+    .concat([
+      { mod: null as any, items: baseExercises.value.map((ex, idx) => ({ ex, idx })).filter(({ ex }) => ex.boss) }
+    ])
 );
 
 /** Capítulos del docente, agrupados por chapterId — siempre desbloqueados

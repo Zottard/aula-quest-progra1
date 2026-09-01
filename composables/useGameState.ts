@@ -5,6 +5,7 @@ import { WEAPONS, ARMORS, PETS, type EquipItem, type UnlockCondition } from "~/d
 import type { Topic } from "~/data/modules";
 import { SKILLS } from "~/data/skills";
 import { DEFAULT_AVATAR_ID, avatarById, auraForTier } from "~/data/avatars";
+import { useExerciseOverrides, applyPatch } from "~/composables/useExerciseOverrides";
 import { useSound } from "~/composables/useSound";
 import { useEventBus } from "~/composables/useEventBus";
 import { useCompiler, normalizeOutput, outputContainsValue } from "~/composables/useCompiler";
@@ -146,12 +147,20 @@ function setChapterExercises(exs: Exercise[]) {
   chapterExercises.splice(0, chapterExercises.length, ...exs);
 }
 
+/** Las 7 misiones fijas CON los parches del aula aplicados (ver
+ * useExerciseOverrides.ts). Todo el juego tiene que leer de acá y no de
+ * EXERCISES directo, si no el alumno vería el enunciado de fábrica y —peor—
+ * se lo corregiría contra el expectedOutput de fábrica en vez del que puso
+ * su docente. Sin aula o sin overrides es idéntico a EXERCISES. */
+const overridePatches = useExerciseOverrides();
+const baseExercises = computed(() => EXERCISES.map((ex) => applyPatch(ex, overridePatches[ex.id])));
+
 /** Busca un ejercicio por id entre las 7 misiones fijas y los capítulos
  * dinámicos del aula — la mayoría de las funciones de abajo necesitan esto
  * en vez de EXERCISES.find() a secas, porque activeId puede apuntar a
  * cualquiera de los dos. */
 function findExercise(id: string): Exercise | undefined {
-  return EXERCISES.find((e) => e.id === id) ?? chapterExercises.find((e) => e.id === id);
+  return baseExercises.value.find((e) => e.id === id) ?? chapterExercises.find((e) => e.id === id);
 }
 
 export function useGameState() {
@@ -624,6 +633,8 @@ export function useGameState() {
     resetCode,
     toggleMute,
     resetProgress,
+    // las 7 misiones fijas con los parches del aula ya aplicados
+    baseExercises,
     // capítulos (contenido del docente generado desde un PDF)
     chapterExercises,
     setChapterExercises,
