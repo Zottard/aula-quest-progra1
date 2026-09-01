@@ -11,7 +11,7 @@ Supabase (ver sección 9), se suma un **panel docente** con aulas, códigos de i
 y progreso por alumno sincronizado — pero el juego en sí nunca depende de que eso esté
 andando; ver `isSupabaseConfigured()` en `composables/useSupabase.ts`.
 
-**Producción:** https://cpp-quest-zottards-projects.vercel.app
+**Producción:** https://aula-quest-progra1.vercel.app/
 **Repo Vercel:** proyecto `cpp-quest` en el team `zottards-projects`, deployado con el
 MCP de Vercel (`deploy_to_vercel`), no vía Git push automático — cualquier cambio requiere
 un nuevo deploy manual con el árbol de archivos completo.
@@ -290,13 +290,13 @@ push; las env vars son un paso manual aparte, y solo hace falta repetirlo si cam
 
 ### 9.3 Paso manual obligatorio (no hay MCP que lo exponga)
 El proyecto Supabase necesita **"Anonymous Sign-Ins" habilitado a mano** en
-`https://supabase.com/dashboard/project/rquyfymebnhaftpljpsn/auth/providers` (Auth →
+`https://supabase.com/dashboard/project//auth/providers` (Auth →
 Providers → Anonymous). Sin esto, ningún alumno puede registrarse ni entrar — el
 onboarding va a fallar silenciosamente en el paso de `ensureAnonSession()`. Ninguna
 herramienta de Supabase disponible en este entorno permite prenderlo por API/MCP; hay
 que entrar al dashboard y tildarlo una sola vez.
 
-### 9.4 Schema (proyecto `cpp-quest`, `rquyfymebnhaftpljpsn`, región `sa-east-1`)
+### 9.4 Schema (proyecto `cpp-quest`, región `sa-east-1`)
 - `profiles` — 1 fila por docente (id = `auth.users.id`).
 - `aulas` — `teacher_id`, `name`, `join_code` (único, `citext`), `archived`.
 - `students` — `auth_user_id` (único, la sesión anónima), `aula_id`, `real_name`,
